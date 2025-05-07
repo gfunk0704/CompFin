@@ -1,0 +1,22 @@
+Option Explicit
+Option Base 1
+
+Function FindDepulicateCell(baseRange As Range, targetRange As Range) As String()
+        ReDim output(baseRange.Count) As String
+        Dim i  As Integer
+        Dim j As Integer
+        Dim baseCell As Range
+        Dim targetCell As Range
+        For Each baseCell In baseRange
+                i = i + 1
+                j = 0
+                For Each targetCell In targetRange
+                        j = j + 1
+                        If (baseCell.Value = targetCell.Value) And (i <> j) Then
+                                output(i) = output(i) + targetCell.Address + ", "
+                        End If
+                Next targetCell
+        Next baseCell
+        FindDepulicateCell = output
+End Function
+
