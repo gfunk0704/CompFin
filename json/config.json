@@ -1,0 +1,153 @@
+{
+    "holiday_calendar": [
+        {
+            "name": "NewYorkBank",
+            "calendar_type": "SimpleCalendar",
+            "weekends": [
+                "Sat",
+                "Sun"
+            ],
+            "recurring_holidays": [
+                {
+                    "holiday_type": "FixedDate",
+                    "month": 1,
+                    "day": 1,
+                    "weekend_adjustment_map": {
+                        "Sat": "PreviousWeekday",
+                        "Sun": "NextWeekday"
+                    }
+                },
+                {
+                    "holiday_type": "NthWeekday",
+                    "month": 1,
+                    "n": 3,
+                    "weekday": "Mon"
+                },
+                {
+                    "holiday_type": "NthWeekday",
+                    "month": 2,
+                    "n": 3,
+                    "weekday": "Mon"
+                },
+                {
+                    "holiday_type": "LastWeekday",
+                    "month": 5,
+                    "weekday": "Mon"
+                },
+                {
+                    "holiday_type": "FixedDate",
+                    "month": 6,
+                    "day": 19,
+                    "weekend_adjustment_map": {
+                        "Sat": "PreviousWeekday",
+                        "Sun": "NextWeekday"
+                    }
+                },
+                {
+                    "holiday_type": "FixedDate",
+                    "month": 7,
+                    "day": 4,
+                    "weekend_adjustment_map": {
+                        "Sat": "PreviousWeekday",
+                        "Sun": "NextWeekday"
+                    }
+                },
+                {
+                    "holiday_type": "NthWeekday",
+                    "month": 9,
+                    "n": 1,
+                    "weekday": "Mon"
+                },
+                {
+                    "holiday_type": "NthWeekday",
+                    "month": 10,
+                    "n": 2,
+                    "weekday": "Mon"
+                },
+                {
+                    "holiday_type": "FixedDate",
+                    "month": 11,
+                    "day": 11,
+                    "weekend_adjustment_map": {
+                        "Sun": "NextWeekday"
+                    }
+                },
+                {
+                    "holiday_type": "NthWeekday",
+                    "month": 11,
+                    "n": 4,
+                    "weekday": "Thu"
+                },
+                {
+                    "holiday_type": "FixedDate",
+                    "month": 12,
+                    "day": 25,
+                    "weekend_adjustment_map": {
+                        "Sat": "PreviousWeekday",
+                        "Sun": "NextWeekday"
+                    }
+                }
+            ],
+            "additional_holidays": [],
+            "additional_business_days": [],
+            "precomputation": {
+                "apply": false,
+                "start_year": 2025,
+                "end_year": 2075
+            }
+        }
+    ],
+    "schedule": [
+        {
+            "name": "3MModifiedFollowingShift0BD",
+            "calculation_period_generator": {
+                "start_lag": 2,
+                "frequency": "3M",
+                "freq_adjuster": {
+                    "convention": "ModifiedFollowing",
+                    "eom": false
+                },
+                "mat_adjuster": {
+                    "convention": "ModifiedFollowing",
+                    "eom": false
+                },
+                "mode": "Normal",
+                "direction": "Backward",
+                "stub_convention": "Retain"
+            },
+            "fixing_date_generator": {
+                "name": "-2BusinessDayFixing",
+                "generator_type": "ShiftDays",
+                "alignment": "StartDate",
+                "adjuster": {
+                    "convention": "Preceding",
+                    "eom": false
+                },
+                "days": -2
+            },
+            "payment_date_generator": {
+                "generator_type": "ShiftDays",
+                "alignment": "EndDate",
+                "adjuster": {
+                    "convention": "Following",
+                    "eom": false
+                },
+                "days": 2
+            }
+        }
+    ],
+    "day_count": [
+        {
+            "name": "Actual365Fixed",
+            "numerator": {
+                "numerator_type": "Actual"
+            },
+            "dominator": {
+                "dominator_type": "Const",
+                "dominator_value": 365.0
+            },
+            "include_d1": false,
+            "include_d2": true
+        }
+    ]
+}
