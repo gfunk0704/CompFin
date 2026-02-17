@@ -50,6 +50,7 @@ pub mod math {
         pub mod nonparametriccurve {
             pub mod nonparametriccurve;
             pub mod piecewisepolynomial;
+            pub mod lagrangepolynomial;
         }
     }
     pub mod round;

@@ -6,12 +6,12 @@ use crate::time::calendar::simplecalendar::SimpleCalendar;
 use crate::time::utility::is_leap;
 
 /// Bitset-based precomputed calendar optimized for long-term ranges (10+ years).
-/// 
+///
 /// Key benefits:
 /// - 3-5x faster is_holiday() queries (~1-2ns vs ~5-10ns)
 /// - 90%+ memory savings for long ranges (48 bytes/year vs ~500+ bytes/year)
 /// - Unified lookup (weekends included in bitset)
-/// 
+///
 /// Memory usage: 48 bytes per year (fixed)
 /// - 10 years: 480 bytes
 /// - 50 years: 2.4 KB
@@ -53,46 +53,6 @@ impl YearBitset {
         block < 3 && (self.bits[block] & (1u128 << bit)) != 0
     }
 
-    /// Creates a bitset from all holidays in a year (including weekends).
-    /// 
-    /// This precomputes:
-    /// - All recurring holidays
-    /// - All additional holidays
-    /// - All weekends
-    /// - Removes additional business days
-    fn from_calendar(calendar: &SimpleCalendar, year: i32) -> Self {
-        let mut bitset = YearBitset::new();
-        
-        // Get all holidays from the calendar (recurring + additional, but not weekends yet)
-        let holidays = calendar.get_holiday_set(year);
-        
-        // Add all holidays to bitset
-        for &date in &holidays {
-            if date.year() == year {
-                bitset.set(date.ordinal0());
-            }
-        }
-        
-        // Add all weekends to bitset
-        let days_in_year = if is_leap(year) { 366 } else { 365 };
-        for day_num in 1..=days_in_year {
-            if let Some(date) = NaiveDate::from_yo_opt(year, day_num) {
-                if calendar.is_weekend(date) {
-                    bitset.set(date.ordinal0());
-                }
-            }
-        }
-        
-        // Remove additional business days (they override weekends/holidays)
-        for &date in calendar.additional_business_days() {
-            if date.year() == year {
-                bitset.clear(date.ordinal0());
-            }
-        }
-        
-        bitset
-    }
-
     /// Clears a day (marks as non-holiday)
     #[inline]
     fn clear(&mut self, day_of_year: u32) {
@@ -101,6 +61,57 @@ impl YearBitset {
         if block < 3 {
             self.bits[block] &= !(1u128 << bit);
         }
+    }
+
+    /// Creates a bitset from all holidays in a year (including weekends).
+    ///
+    /// # 變更說明
+    /// 原本實作有兩段冗餘步驟：
+    /// - Step 2：逐日遍歷補上週末 → `SimpleCalendar::get_holiday_set` 已包含所有週末。
+    /// - Step 3：移除 additional_business_days → `get_holiday_set` 已在 Step 4 做此移除。
+    ///
+    /// 移除冗餘步驟後，初始化（尤其是大年份範圍時）速度顯著加快。
+    ///
+    /// 演算法：
+    /// 1. 呼叫 `get_holiday_set(year)` 取得完整假日集合（含週末、已排除額外工作日）
+    /// 2. 將結果寫入 bitset
+    fn from_calendar(calendar: &SimpleCalendar, year: i32) -> Self {
+        let mut bitset = YearBitset::new();
+
+        // `get_holiday_set` 已完整處理：
+        //   - 所有週末（Step 1）
+        //   - 所有 recurring holidays（Step 2）
+        //   - 所有 additional holidays（Step 3）
+        //   - 移除 additional business days（Step 4）
+        // 因此直接使用其結果，不需要額外的週末補充或 business day 清除步驟。
+        let holidays = calendar.get_holiday_set(year);
+        for &date in &holidays {
+            // Safety guard: get_holiday_set 應只回傳當年日期，此處為防禦性檢查
+            if date.year() == year {
+                bitset.set(date.ordinal0());
+            }
+        }
+
+        // 以下為原始冗餘步驟，已移除，保留作對照：
+        //
+        // // [已移除] Step 2: 補上週末（冗餘：get_holiday_set 的 Step 1 已處理）
+        // let days_in_year = if is_leap(year) { 366 } else { 365 };
+        // for day_num in 1..=days_in_year {
+        //     if let Some(date) = NaiveDate::from_yo_opt(year, day_num) {
+        //         if calendar.is_weekend(date) {
+        //             bitset.set(date.ordinal0());
+        //         }
+        //     }
+        // }
+        //
+        // // [已移除] Step 3: 移除 additional business days（冗餘：get_holiday_set 的 Step 4 已處理）
+        // for &date in calendar.additional_business_days() {
+        //     if date.year() == year {
+        //         bitset.clear(date.ordinal0());
+        //     }
+        // }
+
+        bitset
     }
 
     /// Counts the total number of holidays in this year
@@ -112,14 +123,14 @@ impl YearBitset {
 
 impl PrecomputedSimpleCalendar {
     /// Creates a new PrecomputedSimpleCalendar using bitset storage.
-    /// 
+    ///
     /// Precomputes all holidays (including weekends) for years [start_year, end_year] inclusive.
-    /// 
+    ///
     /// # Arguments
     /// * `raw_calendar` - The calendar to precompute from
     /// * `start_year` - First year to precompute (inclusive)
     /// * `end_year` - Last year to precompute (inclusive)
-    /// 
+    ///
     /// # Example
     /// ```
     /// // Precompute 20 years: 2020-2040
@@ -133,7 +144,7 @@ impl PrecomputedSimpleCalendar {
     ) -> PrecomputedSimpleCalendar {
         let n_years = (end_year - start_year + 1).max(0) as usize;
         let mut precomputed_bits = Vec::with_capacity(n_years);
-        
+
         for year in start_year..=end_year {
             let bitset = YearBitset::from_calendar(&raw_calendar, year);
             precomputed_bits.push(bitset);
@@ -180,7 +191,7 @@ impl PrecomputedSimpleCalendar {
         let total_holidays: u32 = self.precomputed_bits.iter()
             .map(|b| b.count_holidays())
             .sum();
-        
+
         PrecomputedStats {
             num_years: self.len(),
             start_year: self.start_year,
@@ -223,9 +234,9 @@ impl std::fmt::Display for PrecomputedStats {
 
 impl HolidayCalendar for PrecomputedSimpleCalendar {
     /// Ultra-fast holiday check using bitset lookup.
-    /// 
+    ///
     /// Performance: ~1-2ns per call (vs ~5-10ns for HashSet)
-    /// 
+    ///
     /// Note: Additional business days are already excluded from the bitset,
     /// so this is a single bitset lookup with no additional checks needed.
     #[inline]
@@ -243,11 +254,11 @@ impl HolidayCalendar for PrecomputedSimpleCalendar {
     fn get_holiday_set(&self, year: i32) -> HashSet<NaiveDate> {
         if self.in_precomputation_range(year) {
             let index = (year - self.start_year) as usize;
-            
+
             // Reconstruct HashSet from bitset
             let mut set = HashSet::new();
             let days_in_year = if is_leap(year) { 366 } else { 365 };
-            
+
             for day_num in 1..=days_in_year {
                 if let Some(date) = NaiveDate::from_yo_opt(year, day_num) {
                     if self.precomputed_bits[index].is_set(date.ordinal0()) {
@@ -255,7 +266,7 @@ impl HolidayCalendar for PrecomputedSimpleCalendar {
                     }
                 }
             }
-            
+
             set
         } else {
             self.raw_calendar.get_holiday_set(year)

@@ -1,53 +1,71 @@
-// Cargo.toml 需要加入:
-//
-// [dependencies]
-// ndarray = "0.15"
-// ndarray-linalg = { version = "0.16", features = ["openblas-static"] }
-//
-// 或在 Linux/macOS 上使用 netlib：
-// ndarray-linalg = { version = "0.16", features = ["netlib-static"] }
-
-use ndarray::{
-    Array1, 
-    Array2
-};
+use ndarray::{Array1, Array2};
 use ndarray_linalg::Solve;
 
-use crate::math::curve::curve::Curve;
-use crate::math::curve::nonparametriccurve::{
-    NonparametricCurve, 
-    Point2D
-};
+use crate::math::curve::curve::{Curve, CurveIntegration};
+use crate::math::curve::nonparametriccurve::{NonparametricCurve, Point2D};
 
 // ─────────────────────────────────────────────
 // Subpolynomial
 // ─────────────────────────────────────────────
+//
+// 以 Horner 形式儲存多項式係數：coefs = [c_0, c_1, ..., c_n]
+// 代表 P(x) = c_0*(x - lhs_x)^n + c_1*(x - lhs_x)^(n-1) + ... + c_n
+//
+// 可選地預計算：
+//   deriv_coefs      — P'(x) 的係數，供快速求導
+//   antideriv_coefs  — ∫_{lhs_x}^{x} P(t) dt 的係數，供快速積分
 
 struct Subpolynomial {
     coefs: Vec<f64>,
     deriv_coefs: Option<Vec<f64>>,
+    antideriv_coefs: Option<Vec<f64>>,
     lhs_x: f64,
 }
 
 impl Subpolynomial {
-    pub fn new(coefs: Vec<f64>, lhs_x: f64, with_deriv: bool) -> Subpolynomial {
+    pub fn new(
+        coefs: Vec<f64>,
+        lhs_x: f64,
+        with_deriv: bool,
+        with_integral: bool,
+    ) -> Subpolynomial {
         let deriv_coefs = if with_deriv {
             Some(Self::compute_deriv_coefs(&coefs))
         } else {
             None
         };
-        Subpolynomial { coefs, deriv_coefs, lhs_x }
+        let antideriv_coefs = if with_integral {
+            Some(Self::compute_antideriv_coefs(&coefs))
+        } else {
+            None
+        };
+        Subpolynomial { coefs, deriv_coefs, antideriv_coefs, lhs_x }
     }
 
+    // P'(x)：各項乘以次數後降階
+    // [c_0, ..., c_{n-1}] → [n*c_0, (n-1)*c_1, ..., 1*c_{n-1}]
     fn compute_deriv_coefs(coefs: &[f64]) -> Vec<f64> {
-        let order = coefs.len() - 1;
-        if order == 0 {
-            vec![0.0]
-        } else {
-            (0..order)
-                .map(|i| (order - i) as f64 * coefs[i])
-                .collect()
+        let n = coefs.len() - 1;
+        if n == 0 {
+            return vec![0.0];
         }
+        (0..n).map(|i| (n - i) as f64 * coefs[i]).collect()
+    }
+
+    // ∫_0^u P(t) dt（以 u = x - lhs_x 為變數）
+    //
+    // coefs[i] 對應次數 (n-i)，積分後次數升為 (n-i+1)，係數除以 (n-i+1)：
+    //   結果 = [c_0/(n+1), c_1/n, ..., c_{n-1}/2, c_n, 0.0]
+    //                                                     ^^^
+    //                                      積分常數 = 0（F(lhs_x) = 0）
+    fn compute_antideriv_coefs(coefs: &[f64]) -> Vec<f64> {
+        let n = coefs.len() - 1;
+        let mut ac = Vec::with_capacity(n + 2);
+        for (i, &c) in coefs.iter().enumerate() {
+            ac.push(c / (n + 1 - i) as f64);
+        }
+        ac.push(0.0); // 積分常數
+        ac
     }
 
     pub fn value(&self, x: f64) -> f64 {
@@ -55,37 +73,38 @@ impl Subpolynomial {
     }
 
     pub fn derivative(&self, x: f64) -> Option<f64> {
-        self.deriv_coefs
-            .as_ref()
-            .map(|d| self.evaluate(d, x))
+        self.deriv_coefs.as_ref().map(|d| self.evaluate(d, x))
     }
 
+    /// ∫_{lhs_x}^{x} P(t) dt — 必須以 with_integral=true 建構。
+    pub fn integral_from_lhs(&self, x: f64) -> f64 {
+        self.antideriv_coefs
+            .as_ref()
+            .map(|ac| self.evaluate(ac, x))
+            .expect("antiderivative not precomputed: construct with new_with_integrals()")
+    }
+
+    // Horner 求值，以 (x - lhs_x) 為自變數
     fn evaluate(&self, coefs: &[f64], x: f64) -> f64 {
-        let x_diff = x - self.lhs_x;
+        let u = x - self.lhs_x;
         let mut result = coefs[0];
         for &beta in &coefs[1..] {
-            result = f64::mul_add(result, x_diff, beta);
+            result = f64::mul_add(result, u, beta);
         }
         result
     }
 }
 
 // ─────────────────────────────────────────────
-// Flat / Linear（既有）
+// Flat / Linear
 // ─────────────────────────────────────────────
 
 fn generate_forward_flat_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
-    points[..(points.len() - 1)]
-        .iter()
-        .map(|pt| vec![pt.y()])
-        .collect()
+    points[..(points.len() - 1)].iter().map(|pt| vec![pt.y()]).collect()
 }
 
 fn generate_backward_flat_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
-    points[1..]
-        .iter()
-        .map(|pt| vec![pt.y()])
-        .collect()
+    points[1..].iter().map(|pt| vec![pt.y()]).collect()
 }
 
 fn generate_linear_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
@@ -101,10 +120,6 @@ fn generate_linear_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
 // 共用輔助函數
 // ─────────────────────────────────────────────
 
-/// 從各節點的二階導數（moments）m[0..=n] 計算各區間的三次多項式係數。
-///
-/// 每段多項式以 Horner 形式存成 [d, c, b, a]，對應：
-///   S_i(x) = a + b*(x-x_i) + c*(x-x_i)^2 + d*(x-x_i)^3
 fn cubic_coefs_from_moments(points: &[Point2D], h: &[f64], m: &[f64]) -> Vec<Vec<f64>> {
     (0..h.len())
         .map(|i| {
@@ -118,9 +133,6 @@ fn cubic_coefs_from_moments(points: &[Point2D], h: &[f64], m: &[f64]) -> Vec<Vec
         .collect()
 }
 
-/// 從各節點的一階導數（Hermite slopes）t[0..=n] 計算各區間的三次多項式係數。
-///
-/// 同樣存為 [d, c, b, a]。
 fn cubic_coefs_from_hermite(points: &[Point2D], h: &[f64], t: &[f64]) -> Vec<Vec<f64>> {
     (0..h.len())
         .map(|i| {
@@ -135,21 +147,13 @@ fn cubic_coefs_from_hermite(points: &[Point2D], h: &[f64], t: &[f64]) -> Vec<Vec
 }
 
 // ─────────────────────────────────────────────
-// CubicSpline（Natural / Clamped / NotAKnot）
+// CubicSpline（Natural / Financial / Clamped / NotAKnot）
 // ─────────────────────────────────────────────
-//
-// 三種邊界條件共用同一個架構：
-//   建立 (n+1)×(n+1) 的聯立方程組，求解各節點的二階導數 m[0..=n]，
-//   內部方程式由 C² 連續性導出：
-//     h[i-1]*m[i-1] + 2*(h[i-1]+h[i])*m[i] + h[i]*m[i+1]
-//       = 6*( (y[i+1]-y[i])/h[i] - (y[i]-y[i-1])/h[i-1] )
-//   第 0 列與第 n 列依邊界條件設定。
 
 fn build_interior_system(points: &[Point2D], h: &[f64]) -> (Array2<f64>, Array1<f64>) {
     let n = h.len();
     let mut mat = Array2::<f64>::zeros((n + 1, n + 1));
     let mut rhs = Array1::<f64>::zeros(n + 1);
-
     for i in 1..n {
         mat[[i, i - 1]] = h[i - 1];
         mat[[i, i]]     = 2.0 * (h[i - 1] + h[i]);
@@ -162,50 +166,28 @@ fn build_interior_system(points: &[Point2D], h: &[f64]) -> (Array2<f64>, Array1<
     (mat, rhs)
 }
 
-/// Natural：端點的二階導數為 0（m[0] = m[n] = 0）
 fn generate_natural_cubic_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
     let n = points.len() - 1;
     let h: Vec<f64> = (0..n).map(|i| points[i + 1].x() - points[i].x()).collect();
-
     let (mut mat, rhs) = build_interior_system(points, &h);
-    mat[[0, 0]] = 1.0;   // m[0] = 0
-    mat[[n, n]] = 1.0;   // m[n] = 0
-
-    let m = mat.solve_into(rhs)
-        .expect("NaturalCubic: 線性方程組求解失敗");
+    mat[[0, 0]] = 1.0;
+    mat[[n, n]] = 1.0;
+    let m = mat.solve_into(rhs).expect("NaturalCubic: 線性方程組求解失敗");
     cubic_coefs_from_moments(points, &h, m.as_slice().unwrap())
 }
 
-/// Financial：左端二階導數為 0（同 Natural），右端一階導數為 0（水平漸近線）
-///
-///   左端：m[0] = 0
-///   右端：S'(x[n]) = 0，整理後得
-///     m[n-1] + 2·m[n] = -6·(y[n]-y[n-1]) / h[n-1]²
 fn generate_financial_cubic_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
     let n = points.len() - 1;
     let h: Vec<f64> = (0..n).map(|i| points[i + 1].x() - points[i].x()).collect();
-
     let (mut mat, mut rhs) = build_interior_system(points, &h);
-
-    // 左端：Natural（m[0] = 0）
     mat[[0, 0]] = 1.0;
-
-    // 右端：一階導數為 0
     mat[[n, n - 1]] = 1.0;
     mat[[n, n]]     = 2.0;
     rhs[n] = -6.0 * (points[n].y() - points[n - 1].y()) / (h[n - 1] * h[n - 1]);
-
-    let m = mat.solve_into(rhs)
-        .expect("FinancialCubic: 線性方程組求解失敗");
+    let m = mat.solve_into(rhs).expect("FinancialCubic: 線性方程組求解失敗");
     cubic_coefs_from_moments(points, &h, m.as_slice().unwrap())
 }
 
-/// Clamped：端點的一階導數為指定值
-///
-///   左端：2*h[0]*m[0] + h[0]*m[1]
-///           = 6*( (y[1]-y[0])/h[0] - deriv_left )
-///   右端：h[n-1]*m[n-1] + 2*h[n-1]*m[n]
-///           = 6*( deriv_right - (y[n]-y[n-1])/h[n-1] )
 fn generate_clamped_cubic_coef_list(
     points: &[Point2D],
     deriv_left: f64,
@@ -213,117 +195,66 @@ fn generate_clamped_cubic_coef_list(
 ) -> Vec<Vec<f64>> {
     let n = points.len() - 1;
     let h: Vec<f64> = (0..n).map(|i| points[i + 1].x() - points[i].x()).collect();
-
     let (mut mat, mut rhs) = build_interior_system(points, &h);
-
     mat[[0, 0]] = 2.0 * h[0];
     mat[[0, 1]] = h[0];
     rhs[0] = 6.0 * ((points[1].y() - points[0].y()) / h[0] - deriv_left);
-
     mat[[n, n - 1]] = h[n - 1];
     mat[[n, n]]     = 2.0 * h[n - 1];
     rhs[n] = 6.0 * (deriv_right - (points[n].y() - points[n - 1].y()) / h[n - 1]);
-
-    let m = mat.solve_into(rhs)
-        .expect("ClampedCubic: 線性方程組求解失敗");
+    let m = mat.solve_into(rhs).expect("ClampedCubic: 線性方程組求解失敗");
     cubic_coefs_from_moments(points, &h, m.as_slice().unwrap())
 }
 
-/// Not-a-knot：第三導數在 x[1] 與 x[n-1] 處連續，
-/// 等價於相鄰兩段的三次係數相等：
-///
-///   在 x[1]：(m[1]-m[0])/h[0] = (m[2]-m[1])/h[1]
-///     → -h[1]*m[0] + (h[0]+h[1])*m[1] - h[0]*m[2] = 0
-///   在 x[n-1]：(m[n-1]-m[n-2])/h[n-2] = (m[n]-m[n-1])/h[n-1]
-///     → -h[n-1]*m[n-2] + (h[n-2]+h[n-1])*m[n-1] - h[n-2]*m[n] = 0
-///
-/// 至少需要 4 個點（3 個區間）使兩條邊界方程線性獨立。
 fn generate_not_a_knot_cubic_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
     let n = points.len() - 1;
     let h: Vec<f64> = (0..n).map(|i| points[i + 1].x() - points[i].x()).collect();
-
     let (mut mat, rhs) = build_interior_system(points, &h);
-
-    // 左端 not-a-knot（利用 x[1]）
     mat[[0, 0]] =  -h[1];
     mat[[0, 1]] =   h[0] + h[1];
     mat[[0, 2]] =  -h[0];
-
-    // 右端 not-a-knot（利用 x[n-1]）
     mat[[n, n - 2]] = -h[n - 1];
     mat[[n, n - 1]] =  h[n - 2] + h[n - 1];
     mat[[n, n]]     = -h[n - 2];
-
-    let m = mat.solve_into(rhs)
-        .expect("NotAKnotCubic: 線性方程組求解失敗");
+    let m = mat.solve_into(rhs).expect("NotAKnotCubic: 線性方程組求解失敗");
     cubic_coefs_from_moments(points, &h, m.as_slice().unwrap())
 }
 
 // ─────────────────────────────────────────────
 // Akima / Modified Akima
 // ─────────────────────────────────────────────
-//
-// 不建立聯立方程組；各節點的斜率由鄰近有限差分的加權平均獨立計算。
-//
-// 標準 Akima 權重：
-//   w1 = |s[i+1] - s[i]|
-//   w2 = |s[i-1] - s[i-2]|
-//
-// Modified Akima（makima）權重（改善平坦區域的 overshooting）：
-//   w1 = |s[i+1] - s[i]| + |s[i+1] + s[i]| / 2
-//   w2 = |s[i-1] - s[i-2]| + |s[i-1] + s[i-2]| / 2
-//
-// 端點使用外推補齊幽靈點：
-//   s[-1] = 2*s[0] - s[1]
-//   s[-2] = 2*s[-1] - s[0]
-//   s[n]  = 2*s[n-1] - s[n-2]
-//   s[n+1]= 2*s[n] - s[n-1]
 
 fn akima_slopes(points: &[Point2D], h: &[f64], modified: bool) -> Vec<f64> {
     let n = h.len();
-
-    // 有限差分 s[i] = (y[i+1]-y[i]) / h[i]，共 n 個
     let s: Vec<f64> = (0..n)
         .map(|i| (points[i + 1].y() - points[i].y()) / h[i])
         .collect();
-
-    // 端點外推幽靈點（n=1 時左右各退化為同一個值）
-    let s1 = if n > 1 { s[1] } else { s[0] };
+    let s1  = if n > 1 { s[1] } else { s[0] };
     let sn2 = if n > 1 { s[n - 2] } else { s[n - 1] };
-
-    let s_m1 = 2.0 * s[0]      - s1;
-    let s_m2 = 2.0 * s_m1      - s[0];
-    let s_np1 = 2.0 * s[n - 1] - sn2;
-    let s_np2 = 2.0 * s_np1    - s[n - 1];
-
-    // 擴展陣列：ext[i+2] 對應 s[i]
+    let s_m1 = 2.0 * s[0]     - s1;
+    let s_m2 = 2.0 * s_m1     - s[0];
+    let s_p1 = 2.0 * s[n - 1] - sn2;
+    let s_p2 = 2.0 * s_p1     - s[n - 1];
     let mut ext = Vec::with_capacity(n + 4);
     ext.push(s_m2);
     ext.push(s_m1);
     ext.extend_from_slice(&s);
-    ext.push(s_np1);
-    ext.push(s_np2);
-
-    // 為每個節點 i（含兩端）計算斜率
+    ext.push(s_p1);
+    ext.push(s_p2);
     (0..=n)
         .map(|i| {
             let sm2 = ext[i];
             let sm1 = ext[i + 1];
             let sp0 = ext[i + 2];
             let sp1 = ext[i + 3];
-
             let (w1, w2) = if modified {
                 (
                     (sp1 - sp0).abs() + (sp1 + sp0).abs() / 2.0,
                     (sm1 - sm2).abs() + (sm1 + sm2).abs() / 2.0,
                 )
             } else {
-                (
-                    (sp1 - sp0).abs(),
-                    (sm1 - sm2).abs(),
-                )
+                ((sp1 - sp0).abs(), (sm1 - sm2).abs())
             };
-
             if w1 + w2 < f64::EPSILON {
                 (sm1 + sp0) / 2.0
             } else {
@@ -348,20 +279,8 @@ fn generate_modified_akima_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
 }
 
 // ─────────────────────────────────────────────
-// PCHIP（Piecewise Cubic Hermite Interpolating Polynomial）
+// PCHIP
 // ─────────────────────────────────────────────
-//
-// Fritsch-Carlson 方法，保單調性。
-//
-// 內部節點斜率：調和平均值
-//   若 s[i-1]*s[i] <= 0：t[i] = 0（局部極值點）
-//   否則：t[i] = (w1+w2) / (w1/s[i-1] + w2/s[i])
-//           where w1 = 2*h[i] + h[i-1]，w2 = h[i] + 2*h[i-1]
-//
-// 端點斜率：單側有限差分修正
-//   t = ((2*h[0]+h[1])*s[0] - h[0]*s[1]) / (h[0]+h[1])
-//   若符號與 s[0] 相反 → 0
-//   若 s[0]*s[1]<=0 且 |t|>3|s[0]| → 3*s[0]
 
 fn generate_pchip_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
     let n = points.len() - 1;
@@ -369,17 +288,12 @@ fn generate_pchip_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
     let s: Vec<f64> = (0..n)
         .map(|i| (points[i + 1].y() - points[i].y()) / h[i])
         .collect();
-
     let mut t = vec![0.0_f64; n + 1];
-
-    // 只有一個區間：退化為線性
     if n == 1 {
         t[0] = s[0];
         t[1] = s[0];
         return cubic_coefs_from_hermite(points, &h, &t);
     }
-
-    // 內部節點（調和平均）
     for i in 1..n {
         if s[i - 1] * s[i] <= 0.0 {
             t[i] = 0.0;
@@ -389,8 +303,6 @@ fn generate_pchip_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
             t[i] = (w1 + w2) / (w1 / s[i - 1] + w2 / s[i]);
         }
     }
-
-    // 左端點（Fritsch-Carlson 端點修正）
     t[0] = {
         let raw = ((2.0 * h[0] + h[1]) * s[0] - h[0] * s[1]) / (h[0] + h[1]);
         if raw.signum() != s[0].signum() {
@@ -401,20 +313,19 @@ fn generate_pchip_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
             raw
         }
     };
-
-    // 右端點
     t[n] = {
         let raw = ((2.0 * h[n - 1] + h[n - 2]) * s[n - 1] - h[n - 1] * s[n - 2])
                 / (h[n - 1] + h[n - 2]);
         if raw.signum() != s[n - 1].signum() {
             0.0
-        } else if s[n - 1].signum() != s[n - 2].signum() && raw.abs() > 3.0 * s[n - 1].abs() {
+        } else if s[n - 1].signum() != s[n - 2].signum()
+               && raw.abs() > 3.0 * s[n - 1].abs()
+        {
             3.0 * s[n - 1]
         } else {
             raw
         }
     };
-
     cubic_coefs_from_hermite(points, &h, &t)
 }
 
@@ -444,13 +355,13 @@ fn get_necessary_points(polynomial_type: PolynomialType) -> usize {
         PolynomialType::ForwardFlat           => 1,
         PolynomialType::BackwardFlat          => 1,
         PolynomialType::Linear                => 2,
-        PolynomialType::NaturalCubic          => 3, // 2點退化為線性
-        PolynomialType::FinancialCubic        => 3, // 同 Natural
+        PolynomialType::NaturalCubic          => 3,
+        PolynomialType::FinancialCubic        => 3,
         PolynomialType::ClampedCubic          => 2,
-        PolynomialType::NotAKnotCubic         => 4, // 兩條邊界方程需線性獨立
-        PolynomialType::AkimaCubic            => 3, // 2點退化為線性
-        PolynomialType::ModifiedAkimaCubic    => 3, // 同上
-        PolynomialType::PiecewiseCubicHermite => 3, // 同上
+        PolynomialType::NotAKnotCubic         => 4,
+        PolynomialType::AkimaCubic            => 3,
+        PolynomialType::ModifiedAkimaCubic    => 3,
+        PolynomialType::PiecewiseCubicHermite => 3,
     }
 }
 
@@ -463,29 +374,50 @@ pub struct PiecewisePolynomial {
     polynomial_type: PolynomialType,
     subpolynomial_list: Vec<Subpolynomial>,
     has_derivatives: bool,
+    /// 從 min_x 到每個 knot 的累積積分。
+    /// cumulative_integrals[i] = ∫_{x_0}^{x_i} f(t) dt，長度 = 區段數 + 1。
+    /// None 若未以 new_with_integrals 系列建構。
+    cumulative_integrals: Option<Vec<f64>>,
 }
 
 impl PiecewisePolynomial {
-    /// 不預計算導數係數
+    /// 不預計算導數或積分係數。
     pub fn new(
         polynomial_type: PolynomialType,
         points: Vec<Point2D>,
     ) -> Option<PiecewisePolynomial> {
-        Self::new_inner(polynomial_type, points, false)
+        Self::new_inner(polynomial_type, points, false, false)
     }
 
-    /// 預計算導數係數（可呼叫 `derivative()`）
+    /// 預計算導數係數（可呼叫 Curve::derivative()）。
     pub fn new_with_derivatives(
         polynomial_type: PolynomialType,
         points: Vec<Point2D>,
     ) -> Option<PiecewisePolynomial> {
-        Self::new_inner(polynomial_type, points, true)
+        Self::new_inner(polynomial_type, points, true, false)
+    }
+
+    /// 預計算積分係數與累積積分（可呼叫 CurveIntegration::integral()）。
+    pub fn new_with_integrals(
+        polynomial_type: PolynomialType,
+        points: Vec<Point2D>,
+    ) -> Option<PiecewisePolynomial> {
+        Self::new_inner(polynomial_type, points, false, true)
+    }
+
+    /// 同時預計算導數與積分係數。
+    pub fn new_with_derivatives_and_integrals(
+        polynomial_type: PolynomialType,
+        points: Vec<Point2D>,
+    ) -> Option<PiecewisePolynomial> {
+        Self::new_inner(polynomial_type, points, true, true)
     }
 
     fn new_inner(
         polynomial_type: PolynomialType,
         points: Vec<Point2D>,
         with_deriv: bool,
+        with_integrals: bool,
     ) -> Option<PiecewisePolynomial> {
         if points.len() < get_necessary_points(polynomial_type) {
             return None;
@@ -506,15 +438,40 @@ impl PiecewisePolynomial {
             PolynomialType::PiecewiseCubicHermite => generate_pchip_coef_list(&points),
         };
 
-        let subpolynomial_list = (0..(points.len() - 1))
-            .map(|i| Subpolynomial::new(coef_list[i].clone(), points[i].x(), with_deriv))
+        let n_seg = points.len() - 1;
+        let max_x = points.last().unwrap().x();
+
+        let subpolynomial_list: Vec<Subpolynomial> = (0..n_seg)
+            .map(|i| Subpolynomial::new(
+                coef_list[i].clone(),
+                points[i].x(),
+                with_deriv,
+                with_integrals,
+            ))
             .collect();
+
+        // 預計算累積積分：cum[i] = ∫_{x_0}^{x_i} f(t) dt
+        let cumulative_integrals = if with_integrals {
+            let mut cum = vec![0.0_f64; n_seg + 1];
+            for i in 0..n_seg {
+                let right_x = if i + 1 < n_seg {
+                    subpolynomial_list[i + 1].lhs_x
+                } else {
+                    max_x
+                };
+                cum[i + 1] = cum[i] + subpolynomial_list[i].integral_from_lhs(right_x);
+            }
+            Some(cum)
+        } else {
+            None
+        };
 
         Some(PiecewisePolynomial {
             subpolynomial_list,
-            max_x: points.last().unwrap().x(),
+            max_x,
             polynomial_type,
             has_derivatives: with_deriv,
+            cumulative_integrals,
         })
     }
 
@@ -526,14 +483,55 @@ impl PiecewisePolynomial {
         self.has_derivatives
     }
 
+    pub fn has_integrals(&self) -> bool {
+        self.cumulative_integrals.is_some()
+    }
+
+    /// 二分搜尋找出 x 所在區段的索引。
+    ///
+    /// # Bug 修正
+    /// 舊版直接回傳 partition_point(|s| s.lhs_x <= x)，
+    /// 但 partition_point 回傳的是第一個 lhs_x > x 的索引，
+    /// 正確的區段應為其 - 1，否則每個查詢都會偏移一段。
     fn find_segment(&self, x: f64) -> usize {
-        if x <= self.min_x() {
+        let n = self.subpolynomial_list.len();
+        if x <= self.subpolynomial_list[0].lhs_x {
             0
         } else if x >= self.max_x {
-            self.subpolynomial_list.len() - 1
+            n - 1
         } else {
+            // partition_point 回傳第一個 lhs_x > x 的 index p（p >= 1 已確保）
+            // x 所在區段為 p - 1
             self.subpolynomial_list
                 .partition_point(|s| s.lhs_x <= x)
+                - 1
+        }
+    }
+
+    /// ∫_a^b f(x) dx（已知 a <= b）的內部實作，直接使用預計算結果。
+    fn integral_ordered(&self, a: f64, b: f64) -> f64 {
+        let cum = self.cumulative_integrals.as_ref().unwrap();
+
+        let i = self.find_segment(a);
+        let j = self.find_segment(b);
+
+        if i == j {
+            // a 與 b 在同一區段：直接相減
+            self.subpolynomial_list[j].integral_from_lhs(b)
+                - self.subpolynomial_list[i].integral_from_lhs(a)
+        } else {
+            // ① 區段 i 的尾段：a → 區段 i 的右邊界
+            let right_x_i = self.subpolynomial_list[i + 1].lhs_x;
+            let tail_i = self.subpolynomial_list[i].integral_from_lhs(right_x_i)
+                       - self.subpolynomial_list[i].integral_from_lhs(a);
+
+            // ② 區段 i+1 到 j-1 的完整積分：O(1) 查表
+            let middle = cum[j] - cum[i + 1];
+
+            // ③ 區段 j 的頭段：區段 j 左邊界 → b
+            let head_j = self.subpolynomial_list[j].integral_from_lhs(b);
+
+            tail_i + middle + head_j
         }
     }
 }
@@ -575,7 +573,31 @@ impl Curve for PiecewisePolynomial {
         let i = self.find_segment(x);
         self.subpolynomial_list[i]
             .derivative(x)
-            .expect("Derivative not available: use new_with_derivatives() to construct")
+            .expect("derivative not precomputed: construct with new_with_derivatives()")
     }
 }
 
+impl CurveIntegration for PiecewisePolynomial {
+    fn integral(&self, a: f64, b: f64) -> f64 {
+        assert!(
+            self.cumulative_integrals.is_some(),
+            "integrals not precomputed: construct with new_with_integrals()"
+        );
+
+        // 域外 clamp
+        let min_x = self.min_x();
+        let a = a.clamp(min_x, self.max_x);
+        let b = b.clamp(min_x, self.max_x);
+
+        if a == b {
+            return 0.0;
+        }
+
+        // 符號慣例：∫_a^b = -∫_b^a
+        if a > b {
+            -self.integral_ordered(b, a)
+        } else {
+            self.integral_ordered(a, b)
+        }
+    }
+}

@@ -5,7 +5,11 @@ use chrono::{Days, NaiveDate};
 use crate::time::utility::days_of_month;
 
 const ONE_DAY: Days = Days::new(1);
-pub trait HolidayCalendar {
+
+/// # 變更說明
+/// - 加入 `Send + Sync` supertrait，使 `dyn HolidayCalendar` 可安全用於 Arc 與多執行緒環境。
+/// - 移除 `shift_n_business_day` 內部重複定義的 `const ONE_DAY`（與檔案層級常數相同，為冗餘定義）。
+pub trait HolidayCalendar: Send + Sync {
     fn is_holiday(&self, d: NaiveDate) -> bool;
 
     fn get_holiday_set(&self, year: i32) -> HashSet<NaiveDate>;
@@ -15,11 +19,10 @@ pub trait HolidayCalendar {
     }
 
     fn shift_n_business_day(&self, horizon: NaiveDate, n: i32) -> NaiveDate {
-        const ONE_DAY: Days = Days::new(1);
-        let shif_one_day = if n >= 0  {
+        let shif_one_day = if n >= 0 {
             |d: NaiveDate| d + ONE_DAY
         } else {
-             |d: NaiveDate| d - ONE_DAY
+            |d: NaiveDate| d - ONE_DAY
         };
 
         let mut m = n.abs() as u32;
@@ -27,7 +30,7 @@ pub trait HolidayCalendar {
         while m > 0 {
             d = shif_one_day(d);
             m -= self.is_business_day(d) as u32;
-        }   
+        }
         d
     }
 

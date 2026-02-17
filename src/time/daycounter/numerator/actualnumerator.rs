@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc; // 變更：Rc → Arc
 
 use chrono::NaiveDate;
 
@@ -8,7 +8,6 @@ use super::super::daycounter::{
     DayCounterGenerationError
 };
 use super::super::super::schedule::schedule::Schedule;
-
 
 
 pub struct ActualNumerator;
@@ -35,8 +34,10 @@ impl ActualNumeratorGenerator {
 }
 
 impl DayCounterNumeratorGenerator for ActualNumeratorGenerator {
-    fn generate(&self, _schedule_opt: Option<&Schedule>) -> Result<Rc<dyn DayCounterNumerator>, DayCounterGenerationError> {
-        Ok(Rc::new(ActualNumerator::new()))
+    fn generate(
+        &self,
+        _schedule_opt: Option<&Schedule>,
+    ) -> Result<Arc<dyn DayCounterNumerator>, DayCounterGenerationError> { // 變更：Rc → Arc
+        Ok(Arc::new(ActualNumerator::new()))
     }
 }
-

@@ -1,8 +1,8 @@
 use std::fmt;
-use std::rc::Rc;
+use std::sync::Arc; // 變更：use std::rc::Rc → use std::sync::Arc
 
 use chrono::{
-    Datelike, 
+    Datelike,
     NaiveDate
 };
 
@@ -15,20 +15,25 @@ use serde::de;
 use crate::time::calendar::holidaycalendar::HolidayCalendar;
 use crate::time::period::Period;
 
-fn unadjust(d: NaiveDate, _calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
+// ─────────────────────────────────────────────────────────────────────────────
+// 所有 adjuster 函式：參數型別 &Rc<dyn HolidayCalendar> → &Arc<dyn HolidayCalendar>
+// 演算法邏輯完全不變。
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn unadjust(d: NaiveDate, _calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
     d
 }
 
-fn following(d: NaiveDate, calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
+fn following(d: NaiveDate, calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
     calendar.next_business_day(d)
 }
 
-fn preceding(d: NaiveDate, calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
+fn preceding(d: NaiveDate, calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
     calendar.previous_business_day(d)
 }
 
-fn modified_following(d: NaiveDate, calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
-    let eom = calendar.last_business_day_of_month(d.year(),d.month());
+fn modified_following(d: NaiveDate, calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
+    let eom = calendar.last_business_day_of_month(d.year(), d.month());
     if d > eom {
         eom
     } else {
@@ -36,8 +41,8 @@ fn modified_following(d: NaiveDate, calendar: &Rc<dyn HolidayCalendar>) -> Naive
     }
 }
 
-fn modified_preceding(d: NaiveDate, calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
-    let fom = calendar.first_business_day_of_month(d.year(),d.month());
+fn modified_preceding(d: NaiveDate, calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
+    let fom = calendar.first_business_day_of_month(d.year(), d.month());
     if d < fom {
         fom
     } else {
@@ -45,7 +50,7 @@ fn modified_preceding(d: NaiveDate, calendar: &Rc<dyn HolidayCalendar>) -> Naive
     }
 }
 
-fn half_month_modified_following(d: NaiveDate, calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
+fn half_month_modified_following(d: NaiveDate, calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
     let adjusted = calendar.next_business_day(d);
     if (adjusted.month() != d.month()) ||
        ((d.day() <= 15) && (adjusted.day() > 15)) {
@@ -55,7 +60,7 @@ fn half_month_modified_following(d: NaiveDate, calendar: &Rc<dyn HolidayCalendar
     }
 }
 
-fn nearest(d: NaiveDate, calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
+fn nearest(d: NaiveDate, calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
     let previous_day = calendar.previous_business_day(d);
     let next_day = calendar.next_business_day(d);
     if (next_day - d).num_days() < (d - previous_day).num_days() {
@@ -76,11 +81,13 @@ pub enum BusinessDayConvention {
     Nearest
 }
 
+/// # 變更說明
+/// - `adjuster` fn pointer 參數型別 `&Rc<dyn HolidayCalendar>` → `&Arc<dyn HolidayCalendar>`。
 #[derive(Clone, Copy)]
 pub struct BusinessDayAdjuster {
     convention: BusinessDayConvention,
     eom: bool,
-    adjuster: fn(NaiveDate, &Rc<dyn HolidayCalendar>) -> NaiveDate 
+    adjuster: fn(NaiveDate, &Arc<dyn HolidayCalendar>) -> NaiveDate // 變更：Rc → Arc
 }
 
 impl BusinessDayAdjuster {
@@ -94,7 +101,7 @@ impl BusinessDayAdjuster {
             BusinessDayConvention::HalfMonthModifiedFollowing => half_month_modified_following,
             BusinessDayConvention::Nearest => nearest
         };
-        BusinessDayAdjuster {convention: convention, eom: eom, adjuster: adjuster}
+        BusinessDayAdjuster { convention, eom, adjuster }
     }
 
     pub fn convention(&self) -> BusinessDayConvention {
@@ -105,7 +112,9 @@ impl BusinessDayAdjuster {
         self.eom
     }
 
-    pub fn adjust(&self, d: NaiveDate, calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
+    /// 公開 API：若 `d` 為假日則調整，否則直接回傳。
+    /// 此方法保持不變，外部呼叫方不需要預先知道 `d` 是否為假日。
+    pub fn adjust(&self, d: NaiveDate, calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
         if calendar.is_holiday(d) {
             (self.adjuster)(d, calendar)
         } else {
@@ -113,10 +122,10 @@ impl BusinessDayAdjuster {
         }
     }
 
-    pub fn from_tenor_to_date(&self, 
-                              horizon: NaiveDate, 
-                              tenor: Period, 
-                              calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
+    pub fn from_tenor_to_date(&self,
+                              horizon: NaiveDate,
+                              tenor: Period,
+                              calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
         if self.eom {
             if calendar.last_business_day_of_month(horizon.year(), horizon.month()) == horizon {
                 let d = horizon + tenor;
@@ -129,19 +138,18 @@ impl BusinessDayAdjuster {
         }
     }
 
-    fn from_tenor_to_date_without_eom_rule(&self, 
-                                           horizon: NaiveDate, 
-                                           tenor: Period, 
-                                           calendar: &Rc<dyn HolidayCalendar>) -> NaiveDate {
+    fn from_tenor_to_date_without_eom_rule(&self,
+                                           horizon: NaiveDate,
+                                           tenor: Period,
+                                           calendar: &Arc<dyn HolidayCalendar>) -> NaiveDate {
         let d = horizon + tenor;
-        if calendar.is_holiday(d) {
-            self.adjust(d, calendar)
-        } else {
-            d
-        }
+        self.adjust(d, calendar)
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Custom Deserialize 實作（原始碼完全保留，僅型別名稱跟隨 Rc→Arc 調整）
+// ─────────────────────────────────────────────────────────────────────────────
 impl<'de> de::Deserialize<'de> for BusinessDayAdjuster {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -149,11 +157,6 @@ impl<'de> de::Deserialize<'de> for BusinessDayAdjuster {
     {
         enum Field { Convention, Eom }
 
-        // This part could also be generated independently by:
-        //
-        //    #[derive(Deserialize)]
-        //    #[serde(field_identifier, rename_all = "lowercase")]
-        //    enum Field { Secs, Nanos }
         impl<'de> de::Deserialize<'de> for Field {
             fn deserialize<D>(deserializer: D) -> Result<Field, D::Error>
             where
@@ -236,4 +239,3 @@ impl<'de> de::Deserialize<'de> for BusinessDayAdjuster {
         deserializer.deserialize_struct("BusinessDayAdjuster", FIELDS, BusinessDayAdjusterVisitor)
     }
 }
-

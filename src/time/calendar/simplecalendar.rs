@@ -1,10 +1,10 @@
 use std::collections::HashSet;
-use std::rc::Rc;
+use std::sync::Arc; // 變更：Rc → Arc
 
 use chrono::{
-    Datelike, 
+    Datelike,
     Days,
-    NaiveDate, 
+    NaiveDate,
     Weekday
 };
 
@@ -57,16 +57,19 @@ impl WeekendMask {
     }
 }
 
+/// # 變更說明
+/// - `recurring_holidays` 由 `Vec<Rc<dyn RecurringHoliday>>` 改為 `Vec<Arc<dyn RecurringHoliday>>`。
+///   `Arc` 為執行緒安全的引用計數，是後續多執行緒/async 的必要前提。
 pub struct SimpleCalendar {
     weekends: WeekendMask,
-    recurring_holidays: Vec<Rc<dyn RecurringHoliday>>,
+    recurring_holidays: Vec<Arc<dyn RecurringHoliday>>, // 變更：Rc → Arc
     additional_holidays: HashSet<NaiveDate>,
     additional_business_days: HashSet<NaiveDate>
 }
 
 impl SimpleCalendar {
     /// Creates a new SimpleCalendar.
-    /// 
+    ///
     /// # Arguments
     /// * `weekends` - Set of weekdays that are considered weekends
     /// * `recurring_holidays` - List of recurring holiday rules
@@ -74,7 +77,7 @@ impl SimpleCalendar {
     /// * `additional_business_days` - Special business days that override weekends/holidays
     pub fn new(
         weekends: HashSet<Weekday>,
-        recurring_holidays: Vec<Rc<dyn RecurringHoliday>>,
+        recurring_holidays: Vec<Arc<dyn RecurringHoliday>>, // 變更：Rc → Arc
         additional_holidays: Vec<NaiveDate>,
         additional_business_days: Vec<NaiveDate>
     ) -> SimpleCalendar {
@@ -124,26 +127,26 @@ impl HolidayCalendar for SimpleCalendar {
             // Weekend can be overridden by additional_business_day
             return !self.is_additional_business_day(d);
         }
-        
+
         // 2. Early exit: if it's a special business day, it's not a holiday
         if self.is_additional_business_day(d) {
             return false;
         }
-        
+
         // 3. Check additional holidays (small set, fast)
         if self.is_additional_holiday(d) {
             return true;
         }
-        
+
         // 4. Last resort: check recurring holidays (requires computation)
         self.is_recurring_holiday(d)
     }
 
     /// Ultra-optimized: Returns all holidays in the given year, INCLUDING weekends.
-    /// 
+    ///
     /// Key optimization: Instead of iterating through all 365 days,
     /// we only iterate through actual weekend weekdays (e.g., Sat + Sun = ~104 iterations).
-    /// 
+    ///
     /// Algorithm:
     /// 1. For each weekend weekday (e.g., Saturday):
     ///    - Find the first occurrence in the year
@@ -155,21 +158,21 @@ impl HolidayCalendar for SimpleCalendar {
         // Pre-allocate with estimated capacity
         // Typical year has ~104 weekends + recurring holidays
         let mut holiday_set = HashSet::with_capacity(120);
-        
+
         // 1. Add all weekends using optimized iteration
         if self.weekends.0 != 0 {
             let weekend_days = self.weekends.weekend_list();
             let year_end = NaiveDate::from_ymd_opt(year, 12, 31).unwrap();
-            
+
             for target_weekday in weekend_days {
                 // Find the first occurrence of this weekday in the year
                 let mut current = NaiveDate::from_ymd_opt(year, 1, 1).unwrap();
-                
+
                 // Fast-forward to the first matching weekday
                 while current.weekday() != target_weekday {
                     current = current.succ_opt().unwrap();
                 }
-                
+
                 // Now iterate by adding 7 days until we exceed the year
                 while current <= year_end {
                     holiday_set.insert(current);

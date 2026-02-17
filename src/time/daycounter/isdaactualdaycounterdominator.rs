@@ -1,9 +1,9 @@
-use std::rc::Rc;
+use std::sync::Arc; // 變更：Rc → Arc
 
 use chrono::{Datelike, NaiveDate};
 
 use super::daycounter::{
-    DayCounterNumerator, 
+    DayCounterNumerator,
     DayCounterDominator,
     DayCounterDominatorGenerator,
     DayCounterGenerationError
@@ -12,8 +12,7 @@ use super::super::schedule::schedule::Schedule;
 use super::super::utility::is_leap;
 
 
-pub struct ISDAActualDayCounterDominator {
-}
+pub struct ISDAActualDayCounterDominator;
 
 impl ISDAActualDayCounterDominator {
     pub fn new() -> ISDAActualDayCounterDominator {
@@ -21,19 +20,17 @@ impl ISDAActualDayCounterDominator {
     }
 }
 
-fn get_dominator (year: i32) -> f64 {
-    if is_leap(year) {
-        366.0
-    } else {
-        365.0
-    }
+fn get_dominator(year: i32) -> f64 {
+    if is_leap(year) { 366.0 } else { 365.0 }
 }
 
 impl DayCounterDominator for ISDAActualDayCounterDominator {
-    fn year_fraction(&self, 
-                     start_date: chrono::NaiveDate, 
-                     end_date: chrono::NaiveDate, 
-                     numerator: &std::rc::Rc<dyn DayCounterNumerator>) -> f64 {
+    fn year_fraction(
+        &self,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+        numerator: &Arc<dyn DayCounterNumerator>, // 變更：Rc → Arc
+    ) -> f64 {
         let start_year = start_date.year();
         let end_year = end_date.year();
         if start_year == end_year {
@@ -53,10 +50,7 @@ impl DayCounterDominator for ISDAActualDayCounterDominator {
     }
 }
 
-
-
 pub struct ISDAActualDayCounterDominatorGenerator;
-
 
 impl ISDAActualDayCounterDominatorGenerator {
     pub fn new() -> ISDAActualDayCounterDominatorGenerator {
@@ -64,9 +58,11 @@ impl ISDAActualDayCounterDominatorGenerator {
     }
 }
 
-
 impl DayCounterDominatorGenerator for ISDAActualDayCounterDominatorGenerator {
-    fn generate(&self, _schedule_opt: Option<&Schedule>) -> Result<Rc<dyn DayCounterDominator>, DayCounterGenerationError> {
-        Ok(Rc::new(ISDAActualDayCounterDominator::new()))
+    fn generate(
+        &self,
+        _schedule_opt: Option<&Schedule>,
+    ) -> Result<Arc<dyn DayCounterDominator>, DayCounterGenerationError> { // 變更：Rc → Arc
+        Ok(Arc::new(ISDAActualDayCounterDominator::new()))
     }
 }

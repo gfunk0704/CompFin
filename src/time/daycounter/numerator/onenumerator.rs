@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc; // 變更：Rc → Arc
 
 use chrono::NaiveDate;
 
@@ -14,7 +14,7 @@ pub struct OneNumerator;
 
 impl OneNumerator {
     pub fn new() -> OneNumerator {
-        OneNumerator { }
+        OneNumerator {}
     }
 }
 
@@ -25,20 +25,19 @@ impl DayCounterNumerator for OneNumerator {
     }
 }
 
-
 pub struct OneNumeratorGenerator;
 
 impl OneNumeratorGenerator {
     pub fn new() -> OneNumeratorGenerator {
-        OneNumeratorGenerator { }
+        OneNumeratorGenerator {}
     }
 }
-
 
 impl DayCounterNumeratorGenerator for OneNumeratorGenerator {
-    fn generate(&self, _schedule_opt: Option<&Schedule>) -> Result<Rc<dyn DayCounterNumerator>, DayCounterGenerationError> {
-        Ok(Rc::new(OneNumerator::new()))
+    fn generate(
+        &self,
+        _schedule_opt: Option<&Schedule>,
+    ) -> Result<Arc<dyn DayCounterNumerator>, DayCounterGenerationError> { // 變更：Rc → Arc
+        Ok(Arc::new(OneNumerator::new()))
     }
 }
-
-

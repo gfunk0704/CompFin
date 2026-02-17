@@ -1,19 +1,13 @@
-use std::rc::Rc;
+use std::sync::Arc; // 變更：Rc → Arc
 
-use chrono::{
-    Datelike, 
-    NaiveDate
-};
+use chrono::{Datelike, NaiveDate};
 
 use super::super::daycounter::{
     DayCounterNumerator,
     DayCounterNumeratorGenerator,
     DayCounterGenerationError
 };
-use super::super::super::utility::{
-    is_leap, 
-    leap_years_between
-};
+use super::super::super::utility::{is_leap, leap_years_between};
 use super::super::super::schedule::schedule::Schedule;
 
 pub struct NoLeapNumerator;
@@ -41,7 +35,6 @@ impl DayCounterNumerator for NoLeapNumerator {
                     days -= 1.0;
                 }
             }
-
             if is_leap(y2) {
                 if d1 >= NaiveDate::from_ymd_opt(y2, 2, 29).unwrap() {
                     days -= 1.0;
@@ -52,7 +45,6 @@ impl DayCounterNumerator for NoLeapNumerator {
     }
 }
 
-
 pub struct NoLeapNumeratorGenerator;
 
 impl NoLeapNumeratorGenerator {
@@ -62,8 +54,10 @@ impl NoLeapNumeratorGenerator {
 }
 
 impl DayCounterNumeratorGenerator for NoLeapNumeratorGenerator {
-    fn generate(&self, _schedule_opt: Option<&Schedule>) -> Result<Rc<dyn DayCounterNumerator>, DayCounterGenerationError> {
-        Ok(Rc::new(NoLeapNumerator::new()))
+    fn generate(
+        &self,
+        _schedule_opt: Option<&Schedule>,
+    ) -> Result<Arc<dyn DayCounterNumerator>, DayCounterGenerationError> { // 變更：Rc → Arc
+        Ok(Arc::new(NoLeapNumerator::new()))
     }
 }
-

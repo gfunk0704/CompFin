@@ -1,21 +1,17 @@
 use std::fmt;
-use std::ops::{
-    Add, 
-    Sub
-};
+use std::ops::{Add, Sub};
 use std::num::ParseIntError;
 
 use chrono::{
-    Datelike, 
-    Duration, 
+    Datelike,
+    Duration,
     NaiveDate
 };
 
 use crate::time::utility::days_of_month;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum TimeUnit
-{
+pub enum TimeUnit {
     Days,
     Weeks,
     Months,
@@ -33,38 +29,52 @@ impl TimeUnit {
     }
 }
 
-
 #[derive(Debug)]
 pub enum ParsePeriodError {
     UnknownTimeUnit(char),
     Parse(ParseIntError)
 }
 
-impl ParsePeriodError {
-    pub fn to_string(&self) -> String {
+/// # 變更說明
+/// 實作 `std::fmt::Display`，取代原本的自定義 `to_string()` 方法。
+/// 好處：
+/// - `Display` 自動提供 `to_string()`（透過 `ToString` blanket impl），原有呼叫方不受影響。
+/// - 與標準 `std::error::Error` trait 相容，可直接搭配 `?` operator 及 `anyhow` 等 error crate。
+impl fmt::Display for ParsePeriodError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParsePeriodError::UnknownTimeUnit(unit) => {
-                let mut msg: String = "unknown time unit '".to_owned();
-                msg.push_str(unit.to_string().as_str());
-                msg.push_str("' found");
-                msg
+                write!(f, "unknown time unit '{}' found", unit)
             },
             ParsePeriodError::Parse(error) => {
-                error.to_string()
+                write!(f, "{}", error)
             }
         }
     }
 }
 
+/// # 變更說明
+/// 實作 `std::error::Error`，使 `ParsePeriodError` 成為標準錯誤型別。
+/// - 允許 `Box<dyn Error>` 與 `anyhow::Error` 等容器直接包裝。
+/// - `source()` 回傳內部 `ParseIntError`，保留錯誤鏈。
+impl std::error::Error for ParsePeriodError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ParsePeriodError::Parse(e) => Some(e),
+            ParsePeriodError::UnknownTimeUnit(_) => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
-pub struct  Period {
+pub struct Period {
     number: i32,
     unit: TimeUnit
 }
 
 impl Period {
     pub fn new(number: i32, unit: TimeUnit) -> Period {
-        Period {number: number, unit: unit}
+        Period { number, unit }
     }
 
     pub fn days(number: i32) -> Period {
@@ -83,10 +93,15 @@ impl Period {
         Period::new(number, TimeUnit::Years)
     }
 
-    pub fn parse(period_str: String) -> Result<Period, ParsePeriodError> {
+    /// # 變更說明
+    /// 參數型別由 `String`（取得所有權）改為 `&str`（借用）。
+    /// - 呼叫方不再需要 clone 或讓出字串所有權。
+    /// - `String::len()`、`chars().nth()`、切片語法 `[..n]` 均適用於 `&str`，邏輯不變。
+    pub fn parse(period_str: &str) -> Result<Period, ParsePeriodError> {
+        // 原始：pub fn parse(period_str: String) -> Result<Period, ParsePeriodError>
         let last_index = period_str.len() - 1;
         let unit_chr = period_str.chars().nth(last_index).unwrap();
-        let number_result = period_str[..last_index].parse::<i32>().clone();
+        let number_result = period_str[..last_index].parse::<i32>();
         if number_result.is_ok() {
             let number = number_result.unwrap();
             match unit_chr {
@@ -102,12 +117,12 @@ impl Period {
     }
 
     pub fn number(&self) -> i32 {
-        return self.number;
-    } 
+        self.number
+    }
 
     pub fn unit(&self) -> TimeUnit {
-        return self.unit;
-    } 
+        self.unit
+    }
 }
 
 impl fmt::Display for Period {
@@ -139,7 +154,7 @@ impl Add<Period> for NaiveDate {
             TimeUnit::Weeks => self + Duration::days(7 * period.number as i64),
             TimeUnit::Months => shift_months(self, period.number),
             TimeUnit::Years => shift_years(self, period.number)
-        }   
+        }
     }
 }
 

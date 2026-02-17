@@ -1,9 +1,9 @@
-use std::rc::Rc;
+use std::sync::Arc; // 變更：Rc → Arc
 
 use serde::Deserialize;
 
 use super::daycounter::{
-    DayCounterNumerator, 
+    DayCounterNumerator,
     DayCounterDominator,
     DayCounterDominatorGenerator,
     DayCounterGenerationError
@@ -17,7 +17,7 @@ pub struct ConstDayCounterDominator {
 
 impl ConstDayCounterDominator {
     pub fn new(dominator_value: f64) -> ConstDayCounterDominator {
-        ConstDayCounterDominator {dominator_value: dominator_value}
+        ConstDayCounterDominator { dominator_value }
     }
 
     pub fn dominator_value(&self) -> f64 {
@@ -27,10 +27,12 @@ impl ConstDayCounterDominator {
 
 impl DayCounterDominator for ConstDayCounterDominator {
     #[inline]
-    fn year_fraction(&self, 
-                     start_date: chrono::NaiveDate, 
-                     end_date: chrono::NaiveDate, 
-                     numerator: &std::rc::Rc<dyn DayCounterNumerator>) -> f64 {
+    fn year_fraction(
+        &self,
+        start_date: chrono::NaiveDate,
+        end_date: chrono::NaiveDate,
+        numerator: &Arc<dyn DayCounterNumerator>, // 變更：Rc → Arc
+    ) -> f64 {
         numerator.days_between(start_date, end_date) / self.dominator_value
     }
 }
@@ -40,10 +42,9 @@ pub struct ConstDayCounterDominatorGenerator {
     dominator_value: f64
 }
 
-
 impl ConstDayCounterDominatorGenerator {
     pub fn new(dominator_value: f64) -> ConstDayCounterDominatorGenerator {
-        ConstDayCounterDominatorGenerator{dominator_value: dominator_value}
+        ConstDayCounterDominatorGenerator { dominator_value }
     }
 
     pub fn dominator_value(&self) -> f64 {
@@ -51,9 +52,11 @@ impl ConstDayCounterDominatorGenerator {
     }
 }
 
-
 impl DayCounterDominatorGenerator for ConstDayCounterDominatorGenerator {
-    fn generate(&self, _schedule_opt: Option<&Schedule>) -> Result<Rc<dyn DayCounterDominator>, DayCounterGenerationError> {
-        Ok(Rc::new(ConstDayCounterDominator::new(self.dominator_value)))
+    fn generate(
+        &self,
+        _schedule_opt: Option<&Schedule>,
+    ) -> Result<Arc<dyn DayCounterDominator>, DayCounterGenerationError> { // 變更：Rc → Arc
+        Ok(Arc::new(ConstDayCounterDominator::new(self.dominator_value)))
     }
 }
