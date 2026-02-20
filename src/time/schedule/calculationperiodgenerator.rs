@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::{
     Datelike, 
@@ -134,7 +134,7 @@ impl CalculationPeriodGenerator {
 
     pub fn generate_extension_periods(
         &self,
-        calendar: &Rc<dyn HolidayCalendar>,
+        calendar: &Arc<dyn HolidayCalendar>,
         horizon: NaiveDate,
         maturity: NaiveDate,
     ) -> Option<Vec<CalculationPeriod>> {
@@ -143,7 +143,7 @@ impl CalculationPeriodGenerator {
 
     pub fn generate_from_maturity_date(
         &self,
-        calendar: &Rc<dyn HolidayCalendar>,
+        calendar: &Arc<dyn HolidayCalendar>,
         horizon: NaiveDate,
         maturity: NaiveDate,
     ) -> Option<Vec<CalculationPeriod>> {
@@ -152,7 +152,7 @@ impl CalculationPeriodGenerator {
 
     pub fn generate_from_maturity_tenor(
         &self,
-        calendar: &Rc<dyn HolidayCalendar>,
+        calendar: &Arc<dyn HolidayCalendar>,
         horizon: NaiveDate,
         maturity: Period,
     ) -> Option<Vec<CalculationPeriod>> {
@@ -165,7 +165,7 @@ impl CalculationPeriodGenerator {
 
     fn generate_from_maturity_date_impl(
         &self,
-        calendar: &Rc<dyn HolidayCalendar>,
+        calendar: &Arc<dyn HolidayCalendar>,
         horizon: NaiveDate,
         maturity: NaiveDate,
         apply_stub_adjuster: bool,
@@ -180,9 +180,9 @@ impl CalculationPeriodGenerator {
         }
 
         let create_calculation_period = if forward {
-            |d1: NaiveDate, d2: NaiveDate| CalculationPeriod::new(d1, d2)
+            |d1: NaiveDate, d2: NaiveDate| CalculationPeriod::regular(d1, d2)
         } else {
-            |d1: NaiveDate, d2: NaiveDate| CalculationPeriod::new(d2, d1)
+            |d1: NaiveDate, d2: NaiveDate| CalculationPeriod::regular(d2, d1)
         };
 
         let mut calculation_periods: Vec<CalculationPeriod> = Vec::new();

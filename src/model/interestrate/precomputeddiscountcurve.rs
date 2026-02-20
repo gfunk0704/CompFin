@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::NaiveDate;
 
@@ -69,7 +69,7 @@ impl CacheStorage {
 }
 
 pub struct PrecomputedDiscountCurve {
-    reference_curve: Rc<dyn InterestRateCurve>,
+    reference_curve: Arc<dyn InterestRateCurve>,
     storage: CacheStorage,
 }
 
@@ -109,7 +109,7 @@ impl PrecomputedDiscountCurve {
     /// );
     /// ```
     pub fn new(
-        reference_curve: Rc<dyn InterestRateCurve>,
+        reference_curve: Arc<dyn InterestRateCurve>,
         dates: &[NaiveDate],
         strategy: CacheStrategy,
     ) -> Self {
@@ -130,7 +130,7 @@ impl PrecomputedDiscountCurve {
 
     /// Create storage with automatic strategy selection.
     fn create_auto_storage(
-        reference_curve: &Rc<dyn InterestRateCurve>,
+        reference_curve: &Arc<dyn InterestRateCurve>,
         dates: &[NaiveDate],
     ) -> CacheStorage {
         if dates.is_empty() {
@@ -159,7 +159,7 @@ impl PrecomputedDiscountCurve {
 
     /// Create sparse (HashMap) storage.
     fn create_sparse_storage(
-        reference_curve: &Rc<dyn InterestRateCurve>,
+        reference_curve: &Arc<dyn InterestRateCurve>,
         dates: &[NaiveDate],
     ) -> CacheStorage {
         let mut map = HashMap::with_capacity(dates.len());
@@ -173,7 +173,7 @@ impl PrecomputedDiscountCurve {
 
     /// Create dense (Vec) storage.
     fn create_dense_storage(
-        reference_curve: &Rc<dyn InterestRateCurve>,
+        reference_curve: &Arc<dyn InterestRateCurve>,
         reference_date: NaiveDate,
         max_days: usize,
         dates: &[NaiveDate],
@@ -225,13 +225,13 @@ impl PrecomputedDiscountCurve {
         }
     }
 
-    pub fn reference_curve(&self) -> &Rc<dyn InterestRateCurve> {
+    pub fn reference_curve(&self) -> &Arc<dyn InterestRateCurve> {
         &self.reference_curve
     }
 }
 
 impl InterestRateCurve for PrecomputedDiscountCurve {
-    fn day_counter(&self) -> Rc<DayCounter> {
+    fn day_counter(&self) -> Arc<DayCounter> {
         self.reference_curve.day_counter()
     }
 

@@ -28,6 +28,7 @@ pub mod interestrate {
         pub mod cachebackend;
         pub mod interestrateindex;
         pub mod termrateindex;
+        pub mod compoundedsimpleinterestrateindex;
         pub mod interestrateindexmanager;
         pub mod cachedinterestrateindex;
     }
