@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::NaiveDate;
 
@@ -73,7 +73,7 @@ impl LegCharacters for FixedRateLegCharacters {
     fn evaluate_flow(
         &self,
         i: usize,
-        _forward_curve_opt: Option<&Rc<dyn InterestRateCurve>>,
+        _forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
         _pricing_condition: &PricingCondition,
     ) -> f64 {
         self.flow_values[i]
@@ -90,11 +90,11 @@ pub struct FixedRateLegCharactersGenerator {
 
 impl FixedRateLegCharactersGenerator {
     pub fn new(
-        calendar: Rc<dyn HolidayCalendar>,
-        fixing_calendar: Rc<dyn HolidayCalendar>,
-        payment_calendar: Rc<dyn HolidayCalendar>,
-        schedule_generator: Rc<ScheduleGenerator>,
-        day_counter_generator: Rc<DayCounterGenerator>,
+        calendar: Arc<dyn HolidayCalendar>,
+        fixing_calendar: Arc<dyn HolidayCalendar>,
+        payment_calendar: Arc<dyn HolidayCalendar>,
+        schedule_generator: Arc<ScheduleGenerator>,
+        day_counter_generator: Arc<DayCounterGenerator>,
         compounding: Compounding,
         setter: LegCharactersSetter,
     ) -> FixedRateLegCharactersGenerator {
@@ -119,7 +119,7 @@ impl LegCharactersGenerator for FixedRateLegCharactersGenerator {
 
     // 改進：實作 generate_with_schedule，消除兩個 generate_with_maturity_* 的重複邏輯
     // generate_with_maturity_date / generate_with_maturity_tenor 的 default 實作會呼叫這裡
-    fn generate_with_schedule(&self, schedule: Schedule) -> Rc<dyn LegCharacters> {
+    fn generate_with_schedule(&self, schedule: Schedule) -> Arc<dyn LegCharacters> {
         let day_counter = self
             .day_counter_generator()
             .generate(Some(&schedule))
@@ -132,7 +132,7 @@ impl LegCharactersGenerator for FixedRateLegCharactersGenerator {
             schedule,
         );
 
-        Rc::new(FixedRateLegCharacters::new(
+        Arc::new(FixedRateLegCharacters::new(
             generic_characters,
             self.setter().fixed_rate(),
         ))

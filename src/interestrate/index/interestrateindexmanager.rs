@@ -1,16 +1,4 @@
 // ── interestrateindexmanager.rs ──────────────────────────────────────────────
-//
-// 遷移至新的兩階段 Manager 架構（ManagerBuilder → FrozenManager）。
-//
-// # 重大變更
-//
-// 舊版使用 `RefCell<HashMap<String, Rc<dyn InterestRateIndex>>>` + 舊版 `IManager`。
-// 新版：
-//   - 全面改用 Arc（移除 Rc）
-//   - 實作新版 IManager<dyn InterestRateIndex + Send + Sync, ...>
-//   - Supports 型別改用 FrozenManager（而非舊的 Manager<Rc<...>>）
-//   - 加入 past_fixings 欄位（舊版遺漏）
-//   - 加入 CompoundingRateIndex 的 JSON 載入路徑
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,6 +7,7 @@ use chrono::NaiveDate;
 use serde::Deserialize;
 
 use crate::interestrate::compounding::Compounding;
+use crate::interestrate::index::compoundingconvention::{FixingConvention, MissingFixingHandler};
 use crate::interestrate::index::compoundingrateindex::CompoundingRateIndex;
 use crate::interestrate::index::interestrateindex::{InterestRateIndex, InterestRateIndexType};
 use crate::interestrate::index::termrateindex::TermRateIndex;
@@ -28,7 +17,17 @@ use crate::manager::namedobject::NamedJsonObject;
 use crate::time::businessdayadjuster::BusinessDayAdjuster;
 use crate::time::calendar::holidaycalendar::HolidayCalendar;
 use crate::time::daycounter::daycounter::DayCounterGenerator;
-use crate::time::period::{ParsePeriodError, Period};
+use crate::time::period::Period;
+
+
+type Supports<'a> = (
+    &'a FrozenManager<dyn HolidayCalendar + Send + Sync>,
+    &'a FrozenManager<DayCounterGenerator>,
+);
+
+fn parse_period(s: String) -> Result<Period, ManagerError> {
+    Period::parse(s).map_err(ManagerError::TenorParseError)
+}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,12 +43,20 @@ struct TermRateIndexJsonProp {
     calendar: String,
     day_counter_generator: String,
     compounding: Compounding,
-    /// 歷史 fixing 資料，格式：{"2024-01-15": 0.0531, ...}
-    /// 若無歷史資料可省略（預設空 HashMap）
     #[serde(default)]
     past_fixings: HashMap<NaiveDate, f64>,
 }
 
+/// JSON prop for CompoundingRateIndex.
+///
+/// # 欄位說明
+///
+/// - `lookback_days`：observation lag（業務日數）。SOFR standard = 0，lookback = 2。
+///   若省略，預設 0。
+/// - `fixing_convention`：`"Advance"` 或 `"Arrear"`。若省略，預設 `"Advance"`。
+/// - `missing_fixing_handler`：`"Null"` 或 `"PreviousFixing"`。若省略，預設 `"Null"`。
+/// - `fixing_calendar`：fixing date 使用的 calendar 名稱。
+///   若省略，與 `calendar` 相同（適用 lookback_days == 0 的情況）。
 #[derive(Deserialize)]
 struct CompoundingRateIndexJsonProp {
     reference_curve_name: String,
@@ -57,11 +64,47 @@ struct CompoundingRateIndexJsonProp {
     adjuster: BusinessDayAdjuster,
     tenor: String,
     calendar: String,
+    #[serde(default)]
+    fixing_calendar: Option<String>,
     day_counter_generator: String,
     result_compounding: Compounding,
-    /// 每日 overnight past fixings（key = 業務日，value = overnight rate）
     #[serde(default)]
     daily_past_fixings: HashMap<NaiveDate, f64>,
+    #[serde(default)]
+    lookback_days: u32,
+    #[serde(default)]
+    lockout_days: u32,
+    #[serde(default = "default_fixing_convention")]
+    fixing_convention: String,
+    #[serde(default = "default_missing_fixing_handler")]
+    missing_fixing_handler: String,
+}
+
+fn default_fixing_convention() -> String { "Advance".to_string() }
+fn default_missing_fixing_handler() -> String { "Null".to_string() }
+
+fn parse_fixing_convention(s: &str) -> Result<FixingConvention, ManagerError> {
+    match s {
+        "Advance" => Ok(FixingConvention::Advance),
+        "Arrear"  => Ok(FixingConvention::Arrear),
+        other     => Err(ManagerError::JsonParseError(
+            serde_json::from_str::<serde_json::Value>(
+                &format!("\"Unknown fixing_convention: {other}\"")
+            ).unwrap_err()
+        )),
+    }
+}
+
+fn parse_missing_fixing_handler(s: &str) -> Result<MissingFixingHandler, ManagerError> {
+    match s {
+        "Null"           => Ok(MissingFixingHandler::Null),
+        "PreviousFixing" => Ok(MissingFixingHandler::PreviousFixing),
+        other            => Err(ManagerError::JsonParseError(
+            serde_json::from_str::<serde_json::Value>(
+                &format!("\"Unknown missing_fixing_handler: {other}\"")
+            ).unwrap_err()
+        )),
+    }
 }
 
 #[derive(Deserialize)]
@@ -75,18 +118,6 @@ struct InterestRateIndexJsonProp {
 // 工廠函式
 // ─────────────────────────────────────────────────────────────────────────────
 
-// FrozenManager 要求 V: ?Sized + Send + Sync。
-// `dyn HolidayCalendar` 已有 Send+Sync supertrait，故可直接使用；
-// DayCounterGenerator 是具體型別，不需要額外標註。
-type Supports<'a> = (
-    &'a FrozenManager<dyn HolidayCalendar + Send + Sync>,
-    &'a FrozenManager<DayCounterGenerator>,
-);
-
-fn parse_period(s: String) -> Result<Period, ManagerError> {
-    Period::parse(s).map_err(ManagerError::TenorParseError)
-}
-
 fn build_term_rate_index(
     json_value: serde_json::Value,
     supports: &Supports,
@@ -94,21 +125,14 @@ fn build_term_rate_index(
     let p: TermRateIndexJsonProp =
         ManagerError::from_json_or_json_parse_error(json_value)?;
 
-    let tenor = parse_period(p.tenor)?;
-    let calendar = supports.0.get(&p.calendar)?;
-    let dcg = supports.1.get(&p.day_counter_generator)?;
-    let day_counter = dcg.generate(None)
-        .map_err(ManagerError::DayCounterGenerationError)?;
+    let tenor      = parse_period(p.tenor)?;
+    let calendar   = supports.0.get(&p.calendar)?;
+    let dcg        = supports.1.get(&p.day_counter_generator)?;
+    let day_counter = dcg.generate(None).map_err(ManagerError::DayCounterGenerationError)?;
 
     Ok(Arc::new(TermRateIndex::new(
-        p.reference_curve_name,
-        p.start_lag,
-        p.adjuster,
-        tenor,
-        calendar,
-        day_counter,
-        p.compounding,
-        p.past_fixings,
+        p.reference_curve_name, p.start_lag, p.adjuster, tenor,
+        calendar, day_counter, p.compounding, p.past_fixings,
     )))
 }
 
@@ -119,21 +143,21 @@ fn build_compounding_rate_index(
     let p: CompoundingRateIndexJsonProp =
         ManagerError::from_json_or_json_parse_error(json_value)?;
 
-    let tenor = parse_period(p.tenor)?;
-    let calendar = supports.0.get(&p.calendar)?;
-    let dcg = supports.1.get(&p.day_counter_generator)?;
-    let day_counter = dcg.generate(None)
-        .map_err(ManagerError::DayCounterGenerationError)?;
+    let tenor           = parse_period(p.tenor)?;
+    let calendar        = supports.0.get(&p.calendar)?;
+    let fixing_calendar = match &p.fixing_calendar {
+        Some(name) => supports.0.get(name)?,
+        None       => calendar.clone(),
+    };
+    let dcg         = supports.1.get(&p.day_counter_generator)?;
+    let day_counter = dcg.generate(None).map_err(ManagerError::DayCounterGenerationError)?;
+    let fixing_conv = parse_fixing_convention(&p.fixing_convention)?;
+    let missing_fix = parse_missing_fixing_handler(&p.missing_fixing_handler)?;
 
-    Ok(Arc::new(CompoundingRateIndex::new(
-        p.reference_curve_name,
-        p.start_lag,
-        p.adjuster,
-        tenor,
-        calendar,
-        day_counter,
-        p.daily_past_fixings,
-        p.result_compounding,
+    Ok(Arc::new(CompoundingRateIndex::with_options(
+        p.reference_curve_name, p.start_lag, p.adjuster, tenor,
+        calendar, fixing_calendar, day_counter, p.daily_past_fixings, p.result_compounding,
+        p.lookback_days, p.lockout_days, fixing_conv, missing_fix,
     )))
 }
 
@@ -145,12 +169,8 @@ fn build_index_from_json(
         ManagerError::from_json_or_json_parse_error(json_value)?;
 
     match wrapper.index_type {
-        InterestRateIndexType::TermRate => {
-            build_term_rate_index(wrapper.props, supports)
-        }
-        InterestRateIndexType::CompoundingRate => {
-            build_compounding_rate_index(wrapper.props, supports)
-        }
+        InterestRateIndexType::TermRate       => build_term_rate_index(wrapper.props, supports),
+        InterestRateIndexType::CompoundingRate => build_compounding_rate_index(wrapper.props, supports),
     }
 }
 
@@ -159,26 +179,6 @@ fn build_index_from_json(
 // InterestRateIndexLoader
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 新版 Loader（取代舊的 InterestRateIndexManager）。
-///
-/// 負責從 JSON 建立 `InterestRateIndex` 物件並放入 `ManagerBuilder`。
-/// 建立完成後呼叫 `builder.build()` 取得不可變的 `FrozenManager`。
-///
-/// # 使用方式
-///
-/// ```rust
-/// let loader = InterestRateIndexLoader;
-/// let mut builder: ManagerBuilder<dyn InterestRateIndex + Send + Sync> =
-///     ManagerBuilder::new();
-///
-/// loader.load_from_reader(&mut builder, "indices.json", &(
-///     &frozen_calendar_manager,
-///     &frozen_day_counter_manager,
-/// ))?;
-///
-/// let index_manager: FrozenManager<dyn InterestRateIndex + Send + Sync> =
-///     builder.build();
-/// ```
 pub struct InterestRateIndexLoader;
 
 impl<'a> IManager<

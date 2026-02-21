@@ -17,7 +17,7 @@ pub mod instrument {
         pub mod fixingratecalculator {
             pub mod fixingratecalculator;
             pub mod termratecalculator;
-            pub mod dailycompoundedcalculator;
+            pub mod compoundingrateindexcalculator;
         }
     }
 }
@@ -31,6 +31,7 @@ pub mod interestrate {
         pub mod compoundedsimpleinterestrateindex;
         pub mod interestrateindexmanager;
         pub mod cachedinterestrateindex;
+        pub mod compoundingconvention;
     }
 }
 

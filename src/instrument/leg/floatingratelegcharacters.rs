@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::NaiveDate;
 
@@ -22,16 +22,17 @@ use crate::time::calendar::holidaycalendar::HolidayCalendar;
 use crate::time::daycounter::daycounter::DayCounterGenerator;
 use crate::time::schedule::schedule::{Schedule, ScheduleGenerator};
 
-// ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FloatingRateLegCharacters
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 pub struct FloatingRateLegCharacters {
     generic_characters: GenericLegCharacters,
     leverage: f64,
     spread: f64,
-    index: Rc<dyn InterestRateIndex>,
-    fixing_rate_calculator: Rc<dyn FixingRateCalculator>,
+    index: Arc<dyn InterestRateIndex + Send + Sync>,
+    fixing_rate_calculator: Arc<dyn FixingRateCalculator>,
     taus: Vec<f64>,
 }
 
@@ -40,23 +41,22 @@ impl FloatingRateLegCharacters {
         generic_characters: GenericLegCharacters,
         leverage: f64,
         spread: f64,
-        index: Rc<dyn InterestRateIndex>,
-        fixing_rate_calculator: Rc<dyn FixingRateCalculator>,
-    ) -> FloatingRateLegCharacters {
-        // 改進：用 iterator 取代 for + push，移除不必要的 mut
-        let taus: Vec<f64> = generic_characters
+        index: Arc<dyn InterestRateIndex + Send + Sync>,
+        fixing_rate_calculator: Arc<dyn FixingRateCalculator>,
+    ) -> Self {
+        let taus = generic_characters
             .schedule()
             .schedule_periods()
             .iter()
-            .map(|period| {
-                let cp = period.calculation_period();
+            .map(|sp| {
+                let cp = sp.calculation_period();
                 generic_characters
                     .day_counter()
                     .year_fraction(cp.start_date(), cp.end_date())
             })
             .collect();
 
-        FloatingRateLegCharacters {
+        Self {
             generic_characters,
             leverage,
             spread,
@@ -66,19 +66,10 @@ impl FloatingRateLegCharacters {
         }
     }
 
-    pub fn leverage(&self) -> f64 {
-        self.leverage
-    }
+    pub fn leverage(&self) -> f64 { self.leverage }
+    pub fn spread(&self) -> f64 { self.spread }
 
-    pub fn spread(&self) -> f64 {
-        self.spread
-    }
-
-    pub fn index(&self) -> &Rc<dyn InterestRateIndex> {
-        self.fixing_rate_calculator.index()
-    }
-
-    pub fn fixing_rate_calculator(&self) -> &Rc<dyn FixingRateCalculator> {
+    pub fn fixing_rate_calculator(&self) -> &Arc<dyn FixingRateCalculator> {
         &self.fixing_rate_calculator
     }
 }
@@ -93,22 +84,22 @@ impl LegCharacters for FloatingRateLegCharacters {
     }
 
     fn max_date(&self) -> NaiveDate {
-        let last_period = self
+        let last = self
             .generic_characters
             .schedule()
             .schedule_periods()
             .last()
             .unwrap();
         max(
-            last_period.payment_date(),
-            self.index.end_date(last_period.fixing_date()),
+            last.payment_date(),
+            self.index.end_date(last.fixing_date()),
         )
     }
 
     fn evaluate_flow(
         &self,
         i: usize,
-        forward_curve_opt: Option<&Rc<dyn InterestRateCurve>>,
+        forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
         pricing_condition: &PricingCondition,
     ) -> f64 {
         let fixing_rate = self
@@ -119,29 +110,30 @@ impl LegCharacters for FloatingRateLegCharacters {
     }
 }
 
-// ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FloatingRateLegCharactersGenerator
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 
 pub struct FloatingRateLegCharactersGenerator {
     generic_characters_generator: GenericLegCharactersGenerator,
-    index: Rc<dyn InterestRateIndex>,
-    fixing_rate_calculator_generator: Rc<dyn FixingRateCalculatorGenerator>,
+    index: Arc<dyn InterestRateIndex + Send + Sync>,
+    fixing_rate_calculator_generator: Arc<dyn FixingRateCalculatorGenerator>,
 }
 
 impl FloatingRateLegCharactersGenerator {
     pub fn new(
-        calendar: Rc<dyn HolidayCalendar>,
-        fixing_calendar: Rc<dyn HolidayCalendar>,
-        payment_calendar: Rc<dyn HolidayCalendar>,
-        schedule_generator: Rc<ScheduleGenerator>,
-        day_counter_generator: Rc<DayCounterGenerator>,
+        calendar: Arc<dyn HolidayCalendar>,
+        fixing_calendar: Arc<dyn HolidayCalendar>,
+        payment_calendar: Arc<dyn HolidayCalendar>,
+        schedule_generator: Arc<ScheduleGenerator>,
+        day_counter_generator: Arc<DayCounterGenerator>,
         compounding: Compounding,
         setter: LegCharactersSetter,
-        index: Rc<dyn InterestRateIndex>,
-        fixing_rate_calculator_generator: Rc<dyn FixingRateCalculatorGenerator>,
-    ) -> FloatingRateLegCharactersGenerator {
-        FloatingRateLegCharactersGenerator {
+        index: Arc<dyn InterestRateIndex + Send + Sync>,
+        fixing_rate_calculator_generator: Arc<dyn FixingRateCalculatorGenerator>,
+    ) -> Self {
+        Self {
             generic_characters_generator: GenericLegCharactersGenerator::new(
                 calendar,
                 fixing_calendar,
@@ -155,10 +147,6 @@ impl FloatingRateLegCharactersGenerator {
             fixing_rate_calculator_generator,
         }
     }
-
-    pub fn index(&self) -> &Rc<dyn InterestRateIndex> {
-        &self.index
-    }
 }
 
 impl LegCharactersGenerator for FloatingRateLegCharactersGenerator {
@@ -166,13 +154,10 @@ impl LegCharactersGenerator for FloatingRateLegCharactersGenerator {
         &self.generic_characters_generator
     }
 
-    // 改進：實作 generate_with_schedule，消除兩個 generate_with_maturity_* 的重複邏輯
-    // generate_with_maturity_date / generate_with_maturity_tenor 的 default 實作會呼叫這裡
-    fn generate_with_schedule(&self, schedule: Schedule) -> Rc<dyn LegCharacters> {
+    fn generate_with_schedule(&self, schedule: Schedule) -> Arc<dyn LegCharacters> {
         let day_counter = self
             .day_counter_generator()
             .generate(Some(&schedule))
-            // 改進：使用 expect 提供明確錯誤訊息，實際上應改為 Result 傳遞
             .expect("DayCounterGenerator failed for FloatingRateLegCharacters");
 
         let fixing_rate_calculator = self
@@ -180,12 +165,12 @@ impl LegCharactersGenerator for FloatingRateLegCharactersGenerator {
             .generate(&schedule);
 
         let generic_characters = GenericLegCharacters::new(
-            self.compounding().clone(),
+            *self.compounding(),
             day_counter,
             schedule,
         );
 
-        Rc::new(FloatingRateLegCharacters::new(
+        Arc::new(FloatingRateLegCharacters::new(
             generic_characters,
             self.setter().leverage(),
             self.setter().spread(),
@@ -193,7 +178,4 @@ impl LegCharactersGenerator for FloatingRateLegCharactersGenerator {
             fixing_rate_calculator,
         ))
     }
-
-    // generate_with_maturity_date 與 generate_with_maturity_tenor
-    // 已有 default 實作（在 trait 中），不再需要重複實作
 }
