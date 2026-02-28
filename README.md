@@ -16,7 +16,8 @@ CompFin 是一個以 Rust 打造的高效能資金管理系統（Treasury System
 ## 技術棧 (Tech Stack)
 
 * **核心語言:** Rust
-* **開發環境:** 採用 Cursor 與 Windsurf 的混合工作流 (Hybrid Workflow) 進行高效開發。
+* **開發環境:** VS Code
+
 
 ## 專案亮點與 AI 協作 (AI Collaboration)
 
