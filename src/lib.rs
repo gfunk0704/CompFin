@@ -5,7 +5,6 @@ pub mod instrument {
     pub mod nominalgenerator;
 
     pub mod interestrate {
-        pub mod deposit;
         pub mod flowobserver;
     }
 
@@ -28,7 +27,7 @@ pub mod interestrate {
         pub mod cachebackend;
         pub mod interestrateindex;
         pub mod termrateindex;
-        pub mod compoundedsimpleinterestrateindex;
+        pub mod compoundingrateindex;
         pub mod interestrateindexmanager;
         pub mod cachedinterestrateindex;
         pub mod compoundingconvention;
@@ -44,6 +43,8 @@ pub mod manager {
 pub mod market {
     pub mod currency;
     pub mod market;
+    pub mod singlecurrencymarket;
+    pub mod fxmarket;
 }
 
 pub mod math {
@@ -74,6 +75,7 @@ pub mod time {
     pub mod period;
     pub mod rangeofdates;
     pub mod businessdayadjuster;
+    pub mod optiondategenerator;
 
     pub mod recurringholiday {
         pub mod recurringholiday;

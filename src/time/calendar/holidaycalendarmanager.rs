@@ -202,7 +202,7 @@ struct JointCalendarJsonProp {
 /// retry loop 的終止條件與演算法邏輯完全不變。
 pub struct HolidayCalendarLoader;
 
-impl IManager<dyn HolidayCalendar, ()> for HolidayCalendarLoader {
+impl IManager<dyn HolidayCalendar + Send + Sync, ()> for HolidayCalendarLoader {
 
     /// 嘗試從 JSON 解析一個 calendar 並插入 builder。
     ///
@@ -212,7 +212,7 @@ impl IManager<dyn HolidayCalendar, ()> for HolidayCalendarLoader {
     ///   此方法跟著傳播 `Err`，由 retry loop 捕獲並在下一輪重試。
     fn insert_obj_from_json(
         &self,
-        builder: &mut ManagerBuilder<dyn HolidayCalendar>,
+        builder: &mut ManagerBuilder<dyn HolidayCalendar + Send + Sync>,
         json_value: serde_json::Value,
         _supports: &(),
     ) -> Result<(), ManagerError> {
@@ -259,7 +259,7 @@ impl IManager<dyn HolidayCalendar, ()> for HolidayCalendarLoader {
     ///      代表有循環相依或格式錯誤，回傳最後一個 `Err`
     fn insert_obj_from_json_vec(
         &self,
-        builder: &mut ManagerBuilder<dyn HolidayCalendar>,
+        builder: &mut ManagerBuilder<dyn HolidayCalendar + Send + Sync>,
         json_vec: &[serde_json::Value],
         supports: &(),
     ) -> Result<(), ManagerError> {

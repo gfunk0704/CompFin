@@ -1,5 +1,5 @@
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::NaiveDate;
 
@@ -21,9 +21,9 @@ pub struct Schedule {
     maturity: NaiveDate,
     schedule_periods: Vec<SchedulePeriod>,
     generator: ScheduleGenerator,
-    calendar: Rc<dyn HolidayCalendar>,
-    fixing_calendar: Rc<dyn HolidayCalendar>,
-    payment_calendar: Rc<dyn HolidayCalendar>
+    calendar: Arc<dyn HolidayCalendar>,
+    fixing_calendar: Arc<dyn HolidayCalendar>,
+    payment_calendar: Arc<dyn HolidayCalendar>
 }
 
 impl Schedule {
@@ -31,9 +31,9 @@ impl Schedule {
                maturity: NaiveDate,
                schedule_periods: Vec<SchedulePeriod>,
                generator: ScheduleGenerator,
-               calendar: Rc<dyn HolidayCalendar>,
-               fixing_calendar: Rc<dyn HolidayCalendar>,
-               payment_calendar: Rc<dyn HolidayCalendar>) -> Schedule {
+               calendar: Arc<dyn HolidayCalendar>,
+               fixing_calendar: Arc<dyn HolidayCalendar>,
+               payment_calendar: Arc<dyn HolidayCalendar>) -> Schedule {
         Schedule {
             horizon: horizon,
             maturity: maturity,
@@ -61,15 +61,15 @@ impl Schedule {
         &self.generator
     }
 
-    pub fn calendar(&self) -> &Rc<dyn HolidayCalendar> {
+    pub fn calendar(&self) -> &Arc<dyn HolidayCalendar> {
         &self.calendar
     }
 
-    pub fn fixing_calendar(&self) -> &Rc<dyn HolidayCalendar> {
+    pub fn fixing_calendar(&self) -> &Arc<dyn HolidayCalendar> {
         &self.fixing_calendar
     }
 
-    pub fn payment_calendar(&self) -> &Rc<dyn HolidayCalendar> {
+    pub fn payment_calendar(&self) -> &Arc<dyn HolidayCalendar> {
         &self.payment_calendar
     }
 
@@ -104,9 +104,9 @@ impl ScheduleGenerator {
     pub fn generate_with_maturity_date(&self,
                                        horizon: NaiveDate,
                                        maturity: NaiveDate,
-                                       calendar:  &Rc<dyn HolidayCalendar>,
-                                       fixing_calendar: &Rc<dyn HolidayCalendar>,
-                                       payment_calendar: &Rc<dyn HolidayCalendar>) -> Option<Schedule> {
+                                       calendar:  &Arc<dyn HolidayCalendar>,
+                                       fixing_calendar: &Arc<dyn HolidayCalendar>,
+                                       payment_calendar: &Arc<dyn HolidayCalendar>) -> Option<Schedule> {
         let calculation_period_opt = self.calculation_period_generator.generate_from_maturity_date(calendar, horizon, maturity);
         if calculation_period_opt.is_none() {
             return  None;
@@ -125,9 +125,9 @@ impl ScheduleGenerator {
     pub fn generate_from_maturity_tenor(&self,
                                         horizon: NaiveDate,
                                         maturity: Period,
-                                        calendar:  &Rc<dyn HolidayCalendar>,
-                                        fixing_calendar: &Rc<dyn HolidayCalendar>,
-                                        payment_calendar: &Rc<dyn HolidayCalendar>) -> Option<Schedule> {
+                                        calendar:  &Arc<dyn HolidayCalendar>,
+                                        fixing_calendar: &Arc<dyn HolidayCalendar>,
+                                        payment_calendar: &Arc<dyn HolidayCalendar>) -> Option<Schedule> {
         let start_date = calendar.shift_n_business_day(horizon, self.calculation_period_generator.start_lag());
         let maturity_date = self.calculation_period_generator.mat_adjuster().from_tenor_to_date(start_date, maturity, calendar);
         self.generate_with_maturity_date(horizon, maturity_date, calendar, fixing_calendar, payment_calendar)

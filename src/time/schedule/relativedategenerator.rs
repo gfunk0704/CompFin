@@ -2,7 +2,7 @@ use std::cmp::{
     max, 
     min
 };
-use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::NaiveDate;
 use serde::Deserialize;
@@ -148,7 +148,7 @@ impl RelativeDateGenerator {
     pub fn generate(
         &self,
         calculation_periods: &[CalculationPeriod],
-        calendar: &Rc<dyn HolidayCalendar>,
+        calendar: &Arc<dyn HolidayCalendar>,
     ) -> Vec<NaiveDate> {
         match self {
             RelativeDateGenerator::ShiftDays(config) => {
@@ -175,7 +175,7 @@ fn create_base_date_getter(
 fn generate_shift_days(
     config: &ShiftDaysConfig,
     calculation_periods: &[CalculationPeriod],
-    calendar: &Rc<dyn HolidayCalendar>,
+    calendar: &Arc<dyn HolidayCalendar>,
 ) -> Vec<NaiveDate> {
     let get_base_date = create_base_date_getter(config.alignment);
     
@@ -199,7 +199,7 @@ fn generate_shift_days(
 fn generate_frequency_ratio(
     config: &FrequencyRatioConfig,
     calculation_periods: &[CalculationPeriod],
-    calendar: &Rc<dyn HolidayCalendar>,
+    calendar: &Arc<dyn HolidayCalendar>,
 ) -> Vec<NaiveDate> {
     if calculation_periods.is_empty() {
         return Vec::new();
@@ -237,7 +237,7 @@ fn generate_frequency_ratio(
 fn generate_frequency_ratio_forward(
     config: &FrequencyRatioConfig,
     calculation_periods: &[CalculationPeriod],
-    calendar: &Rc<dyn HolidayCalendar>,
+    calendar: &Arc<dyn HolidayCalendar>,
     get_base_date: fn(&CalculationPeriod) -> NaiveDate,
     dates: &mut Vec<NaiveDate>,
 ) {
@@ -272,7 +272,7 @@ fn generate_frequency_ratio_forward(
 fn generate_frequency_ratio_backward(
     config: &FrequencyRatioConfig,
     calculation_periods: &[CalculationPeriod],
-    calendar: &Rc<dyn HolidayCalendar>,
+    calendar: &Arc<dyn HolidayCalendar>,
     get_base_date: fn(&CalculationPeriod) -> NaiveDate,
     dates: &mut Vec<NaiveDate>,
 ) {

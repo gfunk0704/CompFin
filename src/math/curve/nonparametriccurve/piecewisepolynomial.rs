@@ -1,8 +1,14 @@
 use ndarray::{Array1, Array2};
 use ndarray_linalg::Solve;
 
-use crate::math::curve::curve::{Curve, CurveIntegration};
-use crate::math::curve::nonparametriccurve::{NonparametricCurve, Point2D};
+use crate::math::curve::curve::{
+    Curve, 
+    CurveIntegration
+};
+use crate::math::curve::nonparametriccurve::nonparametriccurve::{
+    NonparametricCurve, 
+    Point2D
+};
 
 // ─────────────────────────────────────────────
 // Subpolynomial

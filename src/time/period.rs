@@ -10,7 +10,7 @@ use chrono::{
 
 use crate::time::utility::days_of_month;
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash, serde::Serialize, serde::Deserialize)]
 pub enum TimeUnit {
     Days,
     Weeks,
@@ -66,7 +66,7 @@ impl std::error::Error for ParsePeriodError {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Period {
     number: i32,
     unit: TimeUnit

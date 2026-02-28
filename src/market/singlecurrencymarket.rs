@@ -1,14 +1,19 @@
+use std::sync::Arc;
+
+use crate::market::market::Market;
+use crate::market::currency::Currency;
+use crate::time::calendar::holidaycalendar::HolidayCalendar;
 
 pub struct SingleCurrcneyMarket {
     discount_curve_name: String,
-    settlement_calendar: Rc<dyn HolidayCalendar>,
+    settlement_calendar: Arc<dyn HolidayCalendar>,
     settlement_currency: Currency,
     settlement_days: u32
 }
 
 impl SingleCurrcneyMarket {
     pub fn new(discount_curve_name: String,
-               settlement_calendar: Rc<dyn HolidayCalendar>,
+               settlement_calendar: Arc<dyn HolidayCalendar>,
                settlement_currency: Currency,
                settlement_days: u32) -> SingleCurrcneyMarket {
         SingleCurrcneyMarket {
@@ -25,8 +30,8 @@ impl Market for SingleCurrcneyMarket {
         &self.discount_curve_name
     }
 
-    fn settlement_calendar(&self) -> &Rc<dyn HolidayCalendar> {
-        &self.settlement_calendar
+    fn settlement_calendar(&self) -> Arc<(dyn HolidayCalendar + 'static)> {
+        Arc::clone(&self.settlement_calendar)
     }
 
     fn settlement_currency(&self) -> &Currency {

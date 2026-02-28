@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::NaiveDate;
 
@@ -8,13 +8,13 @@ use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::pricingcondition::PricingCondition;
 
 pub struct FlowObserver {
-    ref_leg_characters: Rc<dyn LegCharacters>,
+    ref_leg_characters: Arc<dyn LegCharacters>,
     nominal: f64,
     i: usize
 }   
 
 impl FlowObserver {
-    pub fn new(ref_leg_characters: Rc<dyn LegCharacters>, 
+    pub fn new(ref_leg_characters: Arc<dyn LegCharacters>, 
                nominal: f64, 
                i: usize) -> Self {
         Self {
@@ -37,10 +37,10 @@ impl FlowObserver {
     }
 
     pub fn projected_flow(&self,
-                          forward_curve_opt: Option<&Rc<dyn InterestRateCurve>>,
+                          forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
                           pricing_condition: &PricingCondition,
                           rounding_digits_opt: Option<u32>) -> f64 {
-        let flow = self.ref_leg_characters.projection_flow(self.i, forward_curve_opt, pricing_condition) * self.nominal;
+        let flow = self.ref_leg_characters.evaluate_flow(self.i, forward_curve_opt, pricing_condition) * self.nominal;
         
         if rounding_digits_opt.is_some() {
             round(flow, rounding_digits_opt.unwrap())
@@ -49,7 +49,7 @@ impl FlowObserver {
         }
     }   
 
-    pub fn ref_leg_characters(&self) -> &Rc<dyn LegCharacters> {
+    pub fn ref_leg_characters(&self) -> &Arc<dyn LegCharacters> {
         &self.ref_leg_characters
     }
 

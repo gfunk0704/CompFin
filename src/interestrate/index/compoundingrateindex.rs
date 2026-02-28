@@ -152,7 +152,7 @@ impl CompoundingRateIndex {
             if self.calendar.is_business_day(d) {
                 dates.push(d);
             }
-            d += Days::new(1);
+            d = d + Days::new(1);
         }
         dates
     }

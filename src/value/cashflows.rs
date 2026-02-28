@@ -44,12 +44,12 @@ impl CashFlows {
         
         // 1. 使用迭代器計算所有現金流的現值加總
         let mut total_npv: f64 = self.flows.iter()
-            .map(|(date, amount)| amount * discount_curve.discount(date))
+            .map(|(date, amount)| amount * discount_curve.discount(*date))
             .sum();
         
         // 2. 處理結算日折現 (Settlement Date Discounting)
         if let Some(settlement_date) = settlement_date_opt {
-            let df = discount_curve.discount(&settlement_date);
+            let df = discount_curve.discount(settlement_date);
             // 避免除以 0 的安全檢查 (雖然 DF 通常不為 0)
             assert!(df > 0.0, "Discount factor at settlement date must be positive. Check your curve!");
             total_npv /= df;

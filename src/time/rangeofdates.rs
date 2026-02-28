@@ -1,7 +1,4 @@
-use chrono::{
-    Days,
-    NaiveDate
-};
+use chrono::NaiveDate;
 
 pub struct RangeOfDates {
     start_date: NaiveDate,

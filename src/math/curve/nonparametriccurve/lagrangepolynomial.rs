@@ -2,7 +2,7 @@ use crate::math::curve::curve::{
     Curve, 
     CurveIntegration
 };
-use crate::math::curve::nonparametriccurve::{
+use crate::math::curve::nonparametriccurve::nonparametriccurve::{
     NonparametricCurve, 
     Point2D
 };
@@ -42,7 +42,7 @@ pub struct LagrangePolynomial {
 
 impl LagrangePolynomial {
     /// 基本建構：僅支援 value() 求值
-    pub fn new(mut points: Vec<Point2D>) -> Option<LagrangePolynomial> {
+    pub fn new(points: Vec<Point2D>) -> Option<LagrangePolynomial> {
         Self::new_inner(points, false, false)
     }
 

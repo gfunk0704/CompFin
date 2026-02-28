@@ -11,7 +11,7 @@ use crate::pricingcondition::PricingCondition;
 use crate::time::schedule::schedule::Schedule;
 
 
-pub trait FixingRateCalculator {
+pub trait FixingRateCalculator: Send + Sync {
     fn index(&self) -> &Arc<dyn InterestRateIndex + Send + Sync>;
 
     fn relative_dates(&self, i: usize) -> HashSet<NaiveDate>;

@@ -1,20 +1,16 @@
-use std::cell::{
-    RefCell, 
-    RefMut
-};
 use std::fs::File;
 use std::io::BufReader;
-use std::rc::Rc;
 
 use serde::Deserialize;
 
-
-use crate::manager::managererror::ManagerError;
 use crate::manager::manager::{
-    IManager, 
-    Manager
+    FrozenManager,
+    IManager,
+    ManagerBuilder,
 };
-use crate::time::calendar::holidaycalendarmanager::HolidayCalendarManager;
+use crate::manager::managererror::ManagerError;
+use crate::time::calendar::holidaycalendar::HolidayCalendar;
+use crate::time::calendar::holidaycalendarmanager::HolidayCalendarLoader;
 use crate::time::daycounter::daycounter::DayCounterGenerator;
 use crate::time::daycounter::daycountergeneratormanager::DayCounterGeneratorManager;
 use crate::time::schedule::schedule::ScheduleGenerator;
@@ -28,52 +24,61 @@ struct ConfigurationJsonProp {
     day_count: Vec<serde_json::Value>
 }
 
+/// 系統設定容器。
+///
+/// 在 `from_reader` 中完成所有載入與凍結，
+/// 之後所有 manager 均為不可變的 `FrozenManager`，可安全跨執行緒共享。
 pub struct Configuration {
-    holiyday_calendar_manager_cell: RefCell<HolidayCalendarManager>,
-    schedule_generator_manager_cell: RefCell<Manager<ScheduleGenerator>>,
-    day_counter_generator_manager_cell: RefCell<Manager<Rc<DayCounterGenerator>>>
+    holiday_calendar_manager: FrozenManager<dyn HolidayCalendar + Send + Sync>,
+    schedule_generator_manager: FrozenManager<ScheduleGenerator>,
+    day_counter_generator_manager: FrozenManager<DayCounterGenerator>,
 }
-
 
 impl Configuration {
-    pub fn new() -> Configuration {
-        let holiday_calendar_manager = HolidayCalendarManager::new();
-        let schedule_generator_manager = ScheduleGeneratorManager::new();
-        let day_counter_generator_manager = DayCounterGeneratorManager::new();
-        Configuration {
-            holiyday_calendar_manager_cell: RefCell::new(holiday_calendar_manager),
-            schedule_generator_manager_cell: RefCell::new(schedule_generator_manager),
-            day_counter_generator_manager_cell: RefCell::new(day_counter_generator_manager)
-        }
-    }
-
-    pub fn holiyday_calendar_manager(&self) -> RefMut<'_, HolidayCalendarManager> {
-        let borrow = self.holiyday_calendar_manager_cell.borrow_mut();
-        borrow
-    }
-
-    pub fn schedule_generator_manager(&self) -> RefMut<'_, Manager<ScheduleGenerator>> {
-        let borrow = self.schedule_generator_manager_cell.borrow_mut();
-        borrow
-    }
-
-    pub fn day_counter_generator_manager(&self) -> RefMut<'_, Manager<Rc<DayCounterGenerator>>> {
-        let borrow = self.day_counter_generator_manager_cell.borrow_mut();
-        borrow
-    }
-
-    pub fn from_reader(&self, file_path: String) -> Result<(), ManagerError> {
-        let file = File::open(file_path).map_err(|error| ManagerError::IOError(error))?;
+    /// 從 JSON 設定檔建立 `Configuration`。
+    ///
+    /// 載入順序：holiday calendar → schedule generator → day counter generator。
+    pub fn from_reader(file_path: &str) -> Result<Configuration, ManagerError> {
+        let file = File::open(file_path).map_err(ManagerError::IOError)?;
         let reader = BufReader::new(file);
-        let json_prop: ConfigurationJsonProp = serde_json::from_reader(reader).map_err(|error| ManagerError::JsonParseError(error))?;
-        let _empty_support = ();
-        let holiyday_calendar_manager = self.holiyday_calendar_manager_cell.borrow_mut();
-        let _ = holiyday_calendar_manager.insert_obj_from_json_vec(&json_prop.holiday_calendar)?;
-        let schedule_generator_manager= self.schedule_generator_manager_cell.borrow_mut();
-        let _ = schedule_generator_manager.insert_obj_from_json_vec(&json_prop.schedule, &_empty_support)?;
-        let day_counter_generator_manager = self.day_counter_generator_manager_cell.borrow_mut();
-        let _ = day_counter_generator_manager.insert_obj_from_json_vec(&json_prop.day_count, &_empty_support)?;
-        Ok(())
+        let json_prop: ConfigurationJsonProp = serde_json::from_reader(reader)
+            .map_err(ManagerError::JsonParseError)?;
+
+        // ── Holiday Calendar ──────────────────────────────────────────────────
+        let mut cal_builder: ManagerBuilder<dyn HolidayCalendar + Send + Sync> =
+            ManagerBuilder::new();
+        let cal_loader = HolidayCalendarLoader;
+        cal_loader.insert_obj_from_json_vec(&mut cal_builder, &json_prop.holiday_calendar, &())?;
+        let holiday_calendar_manager = cal_builder.build();
+
+        // ── Schedule Generator ────────────────────────────────────────────────
+        let mut sched_builder: ManagerBuilder<ScheduleGenerator> = ManagerBuilder::new();
+        ScheduleGeneratorManager::new_loader()
+            .insert_obj_from_json_vec(&mut sched_builder, &json_prop.schedule, &())?;
+        let schedule_generator_manager = sched_builder.build();
+
+        // ── Day Counter Generator ─────────────────────────────────────────────
+        let mut dc_builder: ManagerBuilder<DayCounterGenerator> = ManagerBuilder::new();
+        DayCounterGeneratorManager::new_loader()
+            .insert_obj_from_json_vec(&mut dc_builder, &json_prop.day_count, &())?;
+        let day_counter_generator_manager = dc_builder.build();
+
+        Ok(Configuration {
+            holiday_calendar_manager,
+            schedule_generator_manager,
+            day_counter_generator_manager,
+        })
+    }
+
+    pub fn holiday_calendar_manager(&self) -> &FrozenManager<dyn HolidayCalendar + Send + Sync> {
+        &self.holiday_calendar_manager
+    }
+
+    pub fn schedule_generator_manager(&self) -> &FrozenManager<ScheduleGenerator> {
+        &self.schedule_generator_manager
+    }
+
+    pub fn day_counter_generator_manager(&self) -> &FrozenManager<DayCounterGenerator> {
+        &self.day_counter_generator_manager
     }
 }
-

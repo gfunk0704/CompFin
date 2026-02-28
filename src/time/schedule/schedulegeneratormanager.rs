@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use serde::Deserialize;
 
-use crate::manager::manager::Manager;
+use crate::manager::manager::{SimpleLoader};
 use crate::manager::managererror::ManagerError;
 use crate::time::businessdayadjuster::BusinessDayAdjuster;
 use crate::time::period::Period;
@@ -26,7 +28,7 @@ struct CalculationPeriodGeneratorJsonProp {
 
 fn get_calculation_period_generator_from_json(json_value: serde_json::Value) -> Result<CalculationPeriodGenerator, ManagerError> {        
     let generator_props: CalculationPeriodGeneratorJsonProp = ManagerError::from_json_or_json_parse_error(json_value)?;
-    let frequency_result = Period::parse(generator_props.frequency);
+    let frequency_result = Period::parse(&generator_props.frequency);
         
     if frequency_result.is_err() {
         return Err(ManagerError::TenorParseError(frequency_result.err().unwrap()));
@@ -54,14 +56,6 @@ enum RelativeDateGeneratorType {
 
 
 #[derive(Deserialize)]
-struct RelativeDateGeneratorTypedObject {
-    generator_type: RelativeDateGeneratorType
-}
-
-
-
-
-#[derive(Deserialize)]
 struct ScheduleGeneratorJsonProp {
     calculation_period_generator: serde_json::Value,
     fixing_date_generator: serde_json::Value,
@@ -69,7 +63,7 @@ struct ScheduleGeneratorJsonProp {
 }
 
 
-fn get_schedule_generator_from_json(json_value: serde_json::Value) -> Result<ScheduleGenerator, ManagerError> {
+fn get_schedule_generator_from_json(json_value: serde_json::Value) -> Result<Arc<ScheduleGenerator>, ManagerError> {
     let generator_prop: ScheduleGeneratorJsonProp = ManagerError::from_json_or_json_parse_error(json_value)?;
     let calculation_period_generator = get_calculation_period_generator_from_json(generator_prop.calculation_period_generator)?;
     let fixing_date_generator = ManagerError::from_json_or_json_parse_error(generator_prop.fixing_date_generator)?;
@@ -79,7 +73,7 @@ fn get_schedule_generator_from_json(json_value: serde_json::Value) -> Result<Sch
         fixing_date_generator, 
         payment_date_generator
     );
-    Ok(generator)
+    Ok(Arc::new(generator))
 }
 
 
@@ -87,7 +81,16 @@ pub struct ScheduleGeneratorManager;
 
 
 impl ScheduleGeneratorManager {
-    pub fn new() -> Manager<ScheduleGenerator> {
-        Manager::new(get_schedule_generator_from_json)
+    /// 回傳 `SimpleLoader<ScheduleGenerator>` 取代原本的 `Manager<ScheduleGenerator>`。
+    ///
+    /// 使用方式：
+    /// ```rust
+    /// let mut builder: ManagerBuilder<ScheduleGenerator> = ManagerBuilder::new();
+    /// ScheduleGeneratorManager::new_loader()
+    ///     .insert_obj_from_json_vec(&mut builder, &json_vec, &())?;
+    /// let frozen: FrozenManager<ScheduleGenerator> = builder.build();
+    /// ```
+    pub fn new_loader() -> SimpleLoader<ScheduleGenerator> {
+        SimpleLoader::new(get_schedule_generator_from_json)
     }
 }

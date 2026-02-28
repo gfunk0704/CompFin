@@ -26,7 +26,7 @@ type Supports<'a> = (
 );
 
 fn parse_period(s: String) -> Result<Period, ManagerError> {
-    Period::parse(s).map_err(ManagerError::TenorParseError)
+    Period::parse(&s).map_err(ManagerError::TenorParseError)
 }
 
 
