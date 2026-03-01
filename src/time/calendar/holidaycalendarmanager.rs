@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json;
 
 use crate::manager::manager::{IManager, ManagerBuilder};
-use crate::manager::managererror::ManagerError;
+use crate::manager::managererror::{ManagerError, parse_json_value};
 use crate::manager::namedobject::NamedJsonObject;
 use crate::time::calendar::holidaycalendar::HolidayCalendar;
 use crate::time::calendar::jointcalendar::JointCalendar;
@@ -33,7 +33,7 @@ struct EasterRelatedHolidayJsonProp {
 }
 
 fn easter_related_holiday_from_json(json: serde_json::Value) -> Result<Arc<dyn RecurringHoliday>, ManagerError> {
-    let json_prop: EasterRelatedHolidayJsonProp = ManagerError::from_json_or_json_parse_error(json)?;
+    let json_prop: EasterRelatedHolidayJsonProp = parse_json_value(json)?;
     let holiday: Arc<dyn RecurringHoliday> = Arc::new(EasterRelatedHoliday::new(json_prop.easter_type, json_prop.shift_days).unwrap());
     Ok(holiday)
 }
@@ -46,7 +46,7 @@ struct NthWeekdayHolidayJsonProp {
 }
 
 fn nth_weekday_from_json(json: serde_json::Value) -> Result<Arc<dyn RecurringHoliday>, ManagerError> {
-    let json_prop: NthWeekdayHolidayJsonProp = ManagerError::from_json_or_json_parse_error(json)?;
+    let json_prop: NthWeekdayHolidayJsonProp = parse_json_value(json)?;
     let holiday: Arc<dyn RecurringHoliday> = Arc::new(NthWeekdayHoliday::new(json_prop.month, json_prop.n, json_prop.weekday).unwrap());
     Ok(holiday)
 }
@@ -58,7 +58,7 @@ struct LastWeekdayHolidayJsonProp {
 }
 
 fn last_weekday_from_json(json: serde_json::Value) -> Result<Arc<dyn RecurringHoliday>, ManagerError> {
-    let json_prop: LastWeekdayHolidayJsonProp = ManagerError::from_json_or_json_parse_error(json)?;
+    let json_prop: LastWeekdayHolidayJsonProp = parse_json_value(json)?;
     let holiday: Arc<dyn RecurringHoliday> = Arc::new(LastWeekdayHoliday::new(json_prop.month, json_prop.weekday).unwrap());
     Ok(holiday)
 }
@@ -71,7 +71,7 @@ struct FixedDateHolidayJsonProp {
 }
 
 fn fixed_date_holiday_from_json(json: serde_json::Value) -> Result<Arc<dyn RecurringHoliday>, ManagerError> {
-    let json_prop: FixedDateHolidayJsonProp = ManagerError::from_json_or_json_parse_error(json)?;
+    let json_prop: FixedDateHolidayJsonProp = parse_json_value(json)?;
     let holiday: Arc<dyn RecurringHoliday> = Arc::new(FixedDateHoliday::new(json_prop.month, json_prop.day, &json_prop.weekend_adjustment_map).unwrap());
     Ok(holiday)
 }
@@ -90,7 +90,7 @@ struct HolidayTypedObject {
 }
 
 fn get_recurring_holiday_from_json(json: serde_json::Value) -> Result<Arc<dyn RecurringHoliday>, ManagerError> {
-    let holiday_type_obj: HolidayTypedObject = ManagerError::from_json_or_json_parse_error(json.clone())?;
+    let holiday_type_obj: HolidayTypedObject = parse_json_value(json.clone())?;
     match holiday_type_obj.holiday_type {
         HolidayType::EasterRelated => easter_related_holiday_from_json(json),
         HolidayType::FixedDate     => fixed_date_holiday_from_json(json),
@@ -129,7 +129,7 @@ struct SimpleCalendarJsonProp {
 }
 
 fn get_simple_calendar_from_json(json_value: serde_json::Value) -> Result<Arc<dyn HolidayCalendar>, ManagerError> {
-    let holiday_calendar_json: SimpleCalendarJsonProp = ManagerError::from_json_or_json_parse_error(json_value)?;
+    let holiday_calendar_json: SimpleCalendarJsonProp = parse_json_value(json_value)?;
     let mut recurring_holidays: Vec<Arc<dyn RecurringHoliday>> = Vec::new();
     for recurring_holiday_json in holiday_calendar_json.recurring_holidays.iter() {
         let recurring_holiday = get_recurring_holiday_from_json(recurring_holiday_json.clone())?;
@@ -181,7 +181,7 @@ struct JointCalendarJsonProp {
 ///
 /// 解決方式：
 /// - `insert_obj_from_json` 在 `JointCalendar` 的情況下呼叫 `builder.get()`。
-///   若相依尚未載入，`builder.get()` 回傳 `NameNotFoundError`，整個方法回傳 `Err`。
+///   若相依尚未載入，`builder.get()` 回傳 `NotFound`，整個方法回傳 `Err`。
 /// - `insert_obj_from_json_vec` 覆寫預設實作，加入 retry loop：
 ///   每輪把失敗的 index 留到下一輪重試，直到全部成功或連續兩輪沒有進展為止。
 ///
@@ -208,7 +208,7 @@ impl IManager<dyn HolidayCalendar + Send + Sync, ()> for HolidayCalendarLoader {
     ///
     /// - `SimpleCalendar`：直接解析，無相依，不會因為載入順序失敗。
     /// - `JointCalendar`：呼叫 `builder.get()` 查詢相依的子 calendar。
-    ///   若相依尚未載入，`builder.get()` 回傳 `NameNotFoundError`，
+    ///   若相依尚未載入，`builder.get()` 回傳 `NotFound`，
     ///   此方法跟著傳播 `Err`，由 retry loop 捕獲並在下一輪重試。
     fn insert_obj_from_json(
         &self,
@@ -217,9 +217,9 @@ impl IManager<dyn HolidayCalendar + Send + Sync, ()> for HolidayCalendarLoader {
         _supports: &(),
     ) -> Result<(), ManagerError> {
         let named_obj: NamedJsonObject =
-            ManagerError::from_json_or_json_parse_error(json_value.clone())?;
+            parse_json_value(json_value.clone())?;
         let calendar_typed_object: CalendarTypedObject =
-            ManagerError::from_json_or_json_parse_error(json_value.clone())?;
+            parse_json_value(json_value.clone())?;
 
         match calendar_typed_object.calendar_type {
             CalendarType::SimpleCalendar => {
@@ -229,7 +229,7 @@ impl IManager<dyn HolidayCalendar + Send + Sync, ()> for HolidayCalendarLoader {
             },
             CalendarType::JointCalendar => {
                 let joint_prop: JointCalendarJsonProp =
-                    ManagerError::from_json_or_json_parse_error(json_value)?;
+                    parse_json_value(json_value)?;
 
                 // 若 c1 或 c2 尚未載入 → builder.get() 回傳 Err
                 // → 此方法回傳 Err → retry loop 下一輪重試

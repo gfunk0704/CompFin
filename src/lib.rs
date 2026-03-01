@@ -6,6 +6,7 @@ pub mod instrument {
 
     pub mod interestrate {
         pub mod flowobserver;
+        pub mod deposit;
     }
 
     pub mod leg {

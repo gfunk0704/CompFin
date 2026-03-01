@@ -15,7 +15,7 @@ use crate::time::daycounter::numerator::noleapnumerator::NoLeapNumeratorGenerato
 use crate::time::daycounter::numerator::onenumerator::OneNumeratorGenerator;
 use crate::time::daycounter::numerator::thirtynumerator::ThirtyNumeratorGenerator;
 use crate::manager::manager::SimpleLoader; // 變更：Manager → SimpleLoader
-use crate::manager::managererror::ManagerError;
+use crate::manager::managererror::{ManagerError, parse_json_value};
 
 #[derive(Deserialize)]
 pub enum DayCounterNumeratorType {
@@ -58,10 +58,10 @@ fn get_day_counter_generator_from_json(
     json_value: serde_json::Value,
 ) -> Result<Arc<DayCounterGenerator>, ManagerError> { // 變更：Rc → Arc
     let json_prop: DayCounterGeneratorJsonProp =
-        ManagerError::from_json_or_json_parse_error(json_value)?;
+        parse_json_value(json_value)?;
 
     let numerator_typed_object: DayCounterNumeratorTypedObject =
-        ManagerError::from_json_or_json_parse_error(json_prop.numerator.clone())?;
+        parse_json_value(json_prop.numerator.clone())?;
 
     let numerator_generator: Arc<dyn DayCounterNumeratorGenerator> = // 變更：Rc → Arc
         match numerator_typed_object.numerator_type {
@@ -70,19 +70,19 @@ fn get_day_counter_generator_from_json(
             DayCounterNumeratorType::One    => Arc::new(OneNumeratorGenerator::new()),
             DayCounterNumeratorType::Thirty => {
                 let generator: ThirtyNumeratorGenerator =
-                    ManagerError::from_json_or_json_parse_error(json_prop.numerator)?;
+                    parse_json_value(json_prop.numerator)?;
                 Arc::new(generator)
             }
         };
 
     let dominator_typed_object: DayCounterDominatorTypedObject =
-        ManagerError::from_json_or_json_parse_error(json_prop.dominator.clone())?;
+        parse_json_value(json_prop.dominator.clone())?;
 
     let dominator_generator: Arc<dyn DayCounterDominatorGenerator> = // 變更：Rc → Arc
         match dominator_typed_object.dominator_type {
             DayCounterDominatorType::Const => {
                 let generator: ConstDayCounterDominatorGenerator =
-                    ManagerError::from_json_or_json_parse_error(json_prop.dominator)?;
+                    parse_json_value(json_prop.dominator)?;
                 Arc::new(generator)
             },
             DayCounterDominatorType::ICMAActual  => Arc::new(ICMADayCounterDominatorGenerator::new()),

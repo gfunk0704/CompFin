@@ -12,7 +12,7 @@ use crate::interestrate::index::compoundingrateindex::CompoundingRateIndex;
 use crate::interestrate::index::interestrateindex::{InterestRateIndex, InterestRateIndexType};
 use crate::interestrate::index::termrateindex::TermRateIndex;
 use crate::manager::manager::{IManager, ManagerBuilder, FrozenManager};
-use crate::manager::managererror::ManagerError;
+use crate::manager::managererror::{ManagerError, parse_json_value};
 use crate::manager::namedobject::NamedJsonObject;
 use crate::time::businessdayadjuster::BusinessDayAdjuster;
 use crate::time::calendar::holidaycalendar::HolidayCalendar;
@@ -26,7 +26,7 @@ type Supports<'a> = (
 );
 
 fn parse_period(s: String) -> Result<Period, ManagerError> {
-    Period::parse(&s).map_err(ManagerError::TenorParseError)
+    Period::parse(&s).map_err(Into::into)
 }
 
 
@@ -87,10 +87,8 @@ fn parse_fixing_convention(s: &str) -> Result<FixingConvention, ManagerError> {
     match s {
         "Advance" => Ok(FixingConvention::Advance),
         "Arrear"  => Ok(FixingConvention::Arrear),
-        other     => Err(ManagerError::JsonParseError(
-            serde_json::from_str::<serde_json::Value>(
-                &format!("\"Unknown fixing_convention: {other}\"")
-            ).unwrap_err()
+        other     => Err(ManagerError::InvalidValue(
+            format!("unknown fixing_convention: '{other}', expected 'Advance' or 'Arrear'")
         )),
     }
 }
@@ -99,10 +97,8 @@ fn parse_missing_fixing_handler(s: &str) -> Result<MissingFixingHandler, Manager
     match s {
         "Null"           => Ok(MissingFixingHandler::Null),
         "PreviousFixing" => Ok(MissingFixingHandler::PreviousFixing),
-        other            => Err(ManagerError::JsonParseError(
-            serde_json::from_str::<serde_json::Value>(
-                &format!("\"Unknown missing_fixing_handler: {other}\"")
-            ).unwrap_err()
+        other            => Err(ManagerError::InvalidValue(
+            format!("unknown missing_fixing_handler: '{other}', expected 'Null' or 'PreviousFixing'")
         )),
     }
 }
@@ -123,12 +119,12 @@ fn build_term_rate_index(
     supports: &Supports,
 ) -> Result<Arc<dyn InterestRateIndex + Send + Sync>, ManagerError> {
     let p: TermRateIndexJsonProp =
-        ManagerError::from_json_or_json_parse_error(json_value)?;
+        parse_json_value(json_value)?;
 
     let tenor      = parse_period(p.tenor)?;
     let calendar   = supports.0.get(&p.calendar)?;
     let dcg        = supports.1.get(&p.day_counter_generator)?;
-    let day_counter = dcg.generate(None).map_err(ManagerError::DayCounterGenerationError)?;
+    let day_counter = dcg.generate(None)?;
 
     Ok(Arc::new(TermRateIndex::new(
         p.reference_curve_name, p.start_lag, p.adjuster, tenor,
@@ -141,7 +137,7 @@ fn build_compounding_rate_index(
     supports: &Supports,
 ) -> Result<Arc<dyn InterestRateIndex + Send + Sync>, ManagerError> {
     let p: CompoundingRateIndexJsonProp =
-        ManagerError::from_json_or_json_parse_error(json_value)?;
+        parse_json_value(json_value)?;
 
     let tenor           = parse_period(p.tenor)?;
     let calendar        = supports.0.get(&p.calendar)?;
@@ -150,7 +146,7 @@ fn build_compounding_rate_index(
         None       => calendar.clone(),
     };
     let dcg         = supports.1.get(&p.day_counter_generator)?;
-    let day_counter = dcg.generate(None).map_err(ManagerError::DayCounterGenerationError)?;
+    let day_counter = dcg.generate(None)?;
     let fixing_conv = parse_fixing_convention(&p.fixing_convention)?;
     let missing_fix = parse_missing_fixing_handler(&p.missing_fixing_handler)?;
 
@@ -166,7 +162,7 @@ fn build_index_from_json(
     supports: &Supports,
 ) -> Result<Arc<dyn InterestRateIndex + Send + Sync>, ManagerError> {
     let wrapper: InterestRateIndexJsonProp =
-        ManagerError::from_json_or_json_parse_error(json_value)?;
+        parse_json_value(json_value)?;
 
     match wrapper.index_type {
         InterestRateIndexType::TermRate       => build_term_rate_index(wrapper.props, supports),
@@ -192,7 +188,7 @@ impl<'a> IManager<
         supports: &Supports,
     ) -> Result<(), ManagerError> {
         let named: NamedJsonObject =
-            ManagerError::from_json_or_json_parse_error(json_value.clone())?;
+            parse_json_value(json_value.clone())?;
         let index = build_index_from_json(json_value, supports)?;
         builder.insert(named.name().to_owned(), index);
         Ok(())

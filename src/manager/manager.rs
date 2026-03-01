@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde_json;
 
-use super::managererror::ManagerError;
+use super::managererror::{ManagerError, parse_json_value};
 use super::namedobject::NamedJsonObject;
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -78,7 +78,7 @@ impl<V: ?Sized + Send + Sync> ManagerBuilder<V> {
         self.map
             .get(name)
             .cloned()
-            .ok_or_else(|| ManagerError::NameNotFoundError(name.to_owned()))
+            .ok_or_else(|| ManagerError::NotFound(name.to_owned()))
     }
 
     pub fn contains_key(&self, name: &str) -> bool {
@@ -143,7 +143,7 @@ impl<V: ?Sized + Send + Sync> FrozenManager<V> {
         self.map
             .get(name)
             .cloned()
-            .ok_or_else(|| ManagerError::NameNotFoundError(name.to_owned()))
+            .ok_or_else(|| ManagerError::NotFound(name.to_owned()))
     }
 
     pub fn len(&self) -> usize {
@@ -243,10 +243,10 @@ pub trait IManager<V: ?Sized + Send + Sync, S> {
         file_path: &str,
         supports: &S,
     ) -> Result<(), ManagerError> {
-        let file = File::open(file_path).map_err(ManagerError::IOError)?;
+        let file = File::open(file_path)?;
         let reader = BufReader::new(file);
         let json_value: serde_json::Value = serde_json::from_reader(reader)
-            .map_err(ManagerError::JsonParseError)?;
+            ?;
 
         if let Some(arr) = json_value.as_array() {
             self.insert_obj_from_json_vec(builder, arr, supports)
@@ -313,7 +313,7 @@ impl<V: Send + Sync + 'static> IManager<V, ()> for SimpleLoader<V> {
         _supports: &(),
     ) -> Result<(), ManagerError> {
         let named: NamedJsonObject =
-            ManagerError::from_json_or_json_parse_error(json_value.clone())?;
+            parse_json_value(json_value.clone())?;
         let v = (self.factory)(json_value)?;
         builder.insert(named.name().to_owned(), v);
         Ok(())

@@ -39,10 +39,10 @@ impl Configuration {
     ///
     /// 載入順序：holiday calendar → schedule generator → day counter generator。
     pub fn from_reader(file_path: &str) -> Result<Configuration, ManagerError> {
-        let file = File::open(file_path).map_err(ManagerError::IOError)?;
+        let file = File::open(file_path)?;
         let reader = BufReader::new(file);
         let json_prop: ConfigurationJsonProp = serde_json::from_reader(reader)
-            .map_err(ManagerError::JsonParseError)?;
+            ?;
 
         // ── Holiday Calendar ──────────────────────────────────────────────────
         let mut cal_builder: ManagerBuilder<dyn HolidayCalendar + Send + Sync> =

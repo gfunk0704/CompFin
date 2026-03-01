@@ -4,6 +4,7 @@ use std::sync::Arc;
 use chrono::NaiveDate;
 
 use crate::model::interestrate::interestratecurve::InterestRateCurve;
+use crate::time::period::Period;
 use crate::value::cashflows::CashFlows;
 
 use super::super::market::market::Market;
@@ -52,3 +53,17 @@ pub trait InstrumentWithLinearFlows {
 pub trait SimpleInstrument: Instrument + InstrumentWithLinearFlows {
 }
 
+
+pub trait SimpleInstrumentGenerator {
+    fn generate_with_maturity_tenor(&self, 
+                                    position: Position,
+                                    trade_date: NaiveDate,
+                                    maturity_tenor: Period,
+                                    effective_date_opt: Option<NaiveDate>) -> Arc<dyn SimpleInstrument>;
+
+    fn generate_with_maturity_date(&self,
+                                   position: Position,   
+                                   trade_date: NaiveDate,
+                                   maturity_date: NaiveDate,
+                                   effective_date_opt: Option<NaiveDate>) -> Arc<dyn SimpleInstrument>;
+}

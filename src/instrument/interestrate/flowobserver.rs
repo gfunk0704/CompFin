@@ -41,7 +41,6 @@ impl FlowObserver {
                           pricing_condition: &PricingCondition,
                           rounding_digits_opt: Option<u32>) -> f64 {
         let flow = self.ref_leg_characters.evaluate_flow(self.i, forward_curve_opt, pricing_condition) * self.nominal;
-        
         if rounding_digits_opt.is_some() {
             round(flow, rounding_digits_opt.unwrap())
         } else {
