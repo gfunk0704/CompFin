@@ -56,6 +56,9 @@ pub trait LegCharacters: Send + Sync {
         i: usize,
         forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
         pricing_condition: &PricingCondition,
+        // floating leg用：index測量結果的rounding digits；None表示不四捨五入
+        // fixed leg的evaluate_flow實作忽略此參數
+        index_rounding_digits_opt: Option<u32>,
     ) -> f64;
 }
 

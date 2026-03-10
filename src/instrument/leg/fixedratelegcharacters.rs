@@ -75,6 +75,7 @@ impl LegCharacters for FixedRateLegCharacters {
         i: usize,
         _forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
         _pricing_condition: &PricingCondition,
+        _index_rounding_digits_opt: Option<u32>,  // fixed rate不需要index rounding，忽略
     ) -> f64 {
         self.flow_values[i]
     }

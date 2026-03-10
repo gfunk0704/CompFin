@@ -159,7 +159,7 @@ impl InstrumentWithLinearFlows for Deposit {
         for i in 0..pos {
             cash_flows[&self.flow_oberver_list()[i].payment_date()] += self.
                 flow_oberver_list()[i].
-                projected_flow(None, &pricing_condition, rounding_digits_opt);
+                projected_flow(None, &pricing_condition, rounding_digits_opt, None);
         }
 
         cash_flows
@@ -215,22 +215,18 @@ impl InstrumentWithLinearFlows for Deposit {
             return cash_flows;
         }
 
-        // rounding邏輯：
-        // forward_curve_opt.is_some() → floating leg → 看estimated_flow
-        // forward_curve_opt.is_none() → fixed leg   → 看deterministic_flow
+        // rounding決策委託給PricingCondition，呼叫端只需提供幣別digits
+        let digits = self.profit_and_loss_market.settlement_currency().digits();
         let is_floating = forward_curve_opt.is_some();
-        let rounding_digits_opt: Option<u32> = if is_floating {
-            if pricing_condition.dacimal_rounding().estimated_flow() {
-                Some(self.profit_and_loss_market.settlement_currency().digits())
-            } else {
-                None
-            }
+        let flow_rounding_digits_opt: Option<u32> = if is_floating {
+            pricing_condition.floating_flow_rounding_digits(digits)
         } else {
-            if pricing_condition.dacimal_rounding().deterministic_flow() {
-                Some(self.profit_and_loss_market.settlement_currency().digits())
-            } else {
-                None
-            }
+            pricing_condition.fixed_flow_rounding_digits(digits)
+        };
+        let index_rounding_digits_opt: Option<u32> = if is_floating {
+            pricing_condition.floating_index_rounding_digits(digits)
+        } else {
+            None  // fixed leg不需要index rounding
         };
 
         // partition_point找到第一個屬於projected（未來）的flow的位置
@@ -247,7 +243,7 @@ impl InstrumentWithLinearFlows for Deposit {
         for i in pos..self.flow_oberver_list().len() {
             cash_flows[&self.flow_oberver_list()[i].payment_date()] += self
                 .flow_oberver_list()[i]
-                .projected_flow(forward_curve_opt.as_ref(), &pricing_condition, rounding_digits_opt);
+                .projected_flow(forward_curve_opt.as_ref(), &pricing_condition, flow_rounding_digits_opt, index_rounding_digits_opt);
         }
 
         cash_flows

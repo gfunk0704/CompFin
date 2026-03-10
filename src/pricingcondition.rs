@@ -3,16 +3,23 @@ use chrono::NaiveDate;
 
 pub struct DacimalRounding {
     deterministic_flow: bool,
-    estimated_flow: bool
+    // floating rate的rounding分兩個層級：
+    // estimated_index: index測量結果（rate）四捨五入，在evaluate_flow內部發生
+    // estimated_flow:  最終flow金額四捨五入，在projected_flow最外層發生
+    // 兩者可獨立開關，對應Murex的三種模式
+    estimated_index: bool,
+    estimated_flow: bool,
 }
 
 
 impl DacimalRounding {
     pub fn new(deterministic_flow: bool,
+               estimated_index: bool,
                estimated_flow: bool) -> DacimalRounding {
         DacimalRounding {
-            deterministic_flow: deterministic_flow,
-            estimated_flow: estimated_flow
+            deterministic_flow,
+            estimated_index,
+            estimated_flow,
         }
     }
 
@@ -20,12 +27,12 @@ impl DacimalRounding {
         self.deterministic_flow
     }
 
-    pub fn estimated_flow(&self) -> bool {
-        self.estimated_flow
+    pub fn estimated_index(&self) -> bool {
+        self.estimated_index
     }
 
-    pub fn apply_rounding(&self) -> bool {
-        self.deterministic_flow || self.estimated_flow
+    pub fn estimated_flow(&self) -> bool {
+        self.estimated_flow
     }
 }
 
@@ -43,10 +50,10 @@ impl PricingCondition {
                estimate_horizon_index: bool,
                dacimal_rounding: DacimalRounding) -> PricingCondition {
         PricingCondition {
-            horizon: horizon,
-            include_horizon_flow: include_horizon_flow,
-            estimate_horizon_index: estimate_horizon_index,
-            dacimal_rounding: dacimal_rounding
+            horizon,
+            include_horizon_flow,
+            estimate_horizon_index,
+            dacimal_rounding,
         }
     }
 
@@ -62,7 +69,22 @@ impl PricingCondition {
         &self.estimate_horizon_index
     }
 
-    pub fn dacimal_rounding(&self) -> &DacimalRounding {
-        &self.dacimal_rounding
+    // ── rounding決策方法 ──────────────────────────────────────────────────────
+    // 呼叫端只需傳入幣別digits，不需要知道DacimalRounding的內部旗標
+    // 決策邏輯集中在PricingCondition，保持「知道脈絡的物件做決策」的原則
+
+    /// fixed rate leg的flow金額四捨五入
+    pub fn fixed_flow_rounding_digits(&self, currency_digits: u32) -> Option<u32> {
+        self.dacimal_rounding.deterministic_flow().then_some(currency_digits)
+    }
+
+    /// floating rate leg的index rate四捨五入（在evaluate_flow內部，乘leverage前）
+    pub fn floating_index_rounding_digits(&self, currency_digits: u32) -> Option<u32> {
+        self.dacimal_rounding.estimated_index().then_some(currency_digits)
+    }
+
+    /// floating rate leg的flow金額四捨五入（在projected_flow最外層）
+    pub fn floating_flow_rounding_digits(&self, currency_digits: u32) -> Option<u32> {
+        self.dacimal_rounding.estimated_flow().then_some(currency_digits)
     }
 }

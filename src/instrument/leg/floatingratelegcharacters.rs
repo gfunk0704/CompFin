@@ -16,6 +16,7 @@ use crate::instrument::leg::legcharacters::{
 };
 use crate::interestrate::compounding::Compounding;
 use crate::interestrate::index::interestrateindex::InterestRateIndex;
+use crate::math::round::round;
 use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::pricingcondition::PricingCondition;
 use crate::time::calendar::holidaycalendar::HolidayCalendar;
@@ -101,10 +102,19 @@ impl LegCharacters for FloatingRateLegCharacters {
         i: usize,
         forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
         pricing_condition: &PricingCondition,
+        index_rounding_digits_opt: Option<u32>,
     ) -> f64 {
-        let fixing_rate = self
+        let raw_fixing_rate = self
             .fixing_rate_calculator
             .fixing(i, forward_curve_opt.unwrap(), pricing_condition);
+
+        // index層級的四捨五入：在乘上leverage/spread之前對fixing rate做rounding
+        let fixing_rate = if let Some(digits) = index_rounding_digits_opt {
+            round(raw_fixing_rate, digits)
+        } else {
+            raw_fixing_rate
+        };
+
         let rate = self.leverage * fixing_rate + self.spread;
         self.generic_characters.compounding().future_value(rate, self.taus[i]) - 1.0
     }

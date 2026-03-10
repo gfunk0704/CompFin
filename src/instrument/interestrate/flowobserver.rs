@@ -39,10 +39,19 @@ impl FlowObserver {
     pub fn projected_flow(&self,
                           forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
                           pricing_condition: &PricingCondition,
-                          rounding_digits_opt: Option<u32>) -> f64 {
-        let flow = self.ref_leg_characters.evaluate_flow(self.i, forward_curve_opt, pricing_condition) * self.nominal;
-        if rounding_digits_opt.is_some() {
-            round(flow, rounding_digits_opt.unwrap())
+                          // flow金額層級的rounding digits（由呼叫端根據幣別決定）
+                          flow_rounding_digits_opt: Option<u32>,
+                          // index層級的rounding digits；None表示不四捨五入
+                          // floating leg才有意義，fixed leg的evaluate_flow會忽略
+                          index_rounding_digits_opt: Option<u32>) -> f64 {
+        let flow = self.ref_leg_characters.evaluate_flow(
+            self.i,
+            forward_curve_opt,
+            pricing_condition,
+            index_rounding_digits_opt,
+        ) * self.nominal;
+        if let Some(digits) = flow_rounding_digits_opt {
+            round(flow, digits)
         } else {
             flow
         }
@@ -80,4 +89,3 @@ impl CapitalizationFlow {
         self.payment_date
     }
 }
-
