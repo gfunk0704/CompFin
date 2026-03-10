@@ -8,14 +8,16 @@ use crate::instrument::interestrate::flowobserver::{
     FlowObserver
 };
 use crate::instrument::instrument::{
-    CurveFunction,
+    CurveFunction, 
     Instrument, 
-    Position, 
-    SimpleInstrumentGenerator
+    InstrumentWithLinearFlows, 
+    Position
 };
 use crate::instrument::leg::legcharacters::LegCharacters;
 use crate::market::market::Market;
-use crate::time::schedule;
+use crate::model::interestrate::interestratecurve::InterestRateCurve;
+use crate::pricingcondition::PricingCondition;
+use crate::value::cashflows::CashFlows;
 
 
 pub struct Deposit {
@@ -65,13 +67,22 @@ impl Deposit {
             flow_oberver_list.push(FlowObserver::new(leg_characters.clone(), nominal, i));
         }
 
+        let mut curve_name_map: HashMap<CurveFunction, String> = HashMap::new();
+        curve_name_map.insert(CurveFunction::ReceiveDiscount, profit_and_loss_market.discount_curve_name().to_string());
+
+        if leg_characters.reference_curve_name().is_some() {
+            curve_name_map.insert(CurveFunction::ReceiveForward, leg_characters.reference_curve_name().unwrap().to_string());
+        }
+
+
         Self {
             position,
             nominal,
             leg_characters,
             profit_and_loss_market,
             capitalization_flow_list,
-            flow_oberver_list
+            flow_oberver_list,
+            curve_name_map
         }
     }
 
@@ -106,9 +117,139 @@ impl Instrument for Deposit {
         &self.profit_and_loss_market
     }
 
-    fn curve_name_map(&self) -> &HashMap<CurveFunction, String>;
+    fn curve_name_map(&self) -> &HashMap<CurveFunction, String> {
+        &self.curve_name_map
+    }
 
     fn is_linear(&self) -> bool {
         true
+    }
+}
+
+
+impl InstrumentWithLinearFlows for Deposit {
+    fn past_receive_flows(&self, pricing_condition: PricingCondition) -> CashFlows {
+        let mut cash_flows: CashFlows = CashFlows::new();
+        // include_horizon_flow是對projection flow，對past flow會是相反邏輯
+        let include_horizon: bool = !(*pricing_condition.include_horizon_flow()); 
+        let horizon: NaiveDate = *pricing_condition.horizon();
+        let receive_nominal_flow = self.capitalization_flow_list().last().unwrap();
+        let rounding_digits_opt = Some(self.profit_and_loss_market.settlement_currency().digits());
+
+        if  receive_nominal_flow.payment_date() < horizon || 
+            (receive_nominal_flow.payment_date() == horizon && !include_horizon) {
+            cash_flows[&receive_nominal_flow.payment_date()] += receive_nominal_flow.amount();
+        }
+
+        if self.flow_oberver_list().first().unwrap().payment_date() > horizon ||
+           (self.flow_oberver_list().first().unwrap().payment_date() == horizon && include_horizon) {
+            return cash_flows;
+        }
+
+        let pred = |flow_observer: &FlowObserver| {
+            if include_horizon {   // 只是讀一個已捕獲的 bool，非常便宜
+                flow_observer.payment_date() <= horizon
+            } else {
+                flow_observer.payment_date() < horizon
+            }
+        };
+
+        let pos =self.flow_oberver_list.partition_point(pred);
+
+        for i in 0..pos {
+            cash_flows[&self.flow_oberver_list()[i].payment_date()] += self.
+                flow_oberver_list()[i].
+                projected_flow(None, &pricing_condition, rounding_digits_opt);
+        }
+
+        cash_flows
+    }
+
+    fn past_pay_flows(&self, pricing_condition: PricingCondition) -> CashFlows {
+        
+        let mut cash_flows: CashFlows = CashFlows::new();
+        let pay_nominal_flow = self.capitalization_flow_list().first().unwrap();
+        let include_horizon: bool = !(*pricing_condition.include_horizon_flow()); 
+        let horizon: NaiveDate = *pricing_condition.horizon();
+
+        if  pay_nominal_flow.payment_date() < horizon || 
+            (pay_nominal_flow.payment_date() == horizon && !include_horizon) {
+            cash_flows[&pay_nominal_flow.payment_date()] -= pay_nominal_flow.amount();
+        }
+
+        cash_flows
+    }
+
+    fn projected_pay_flows(&self, _forward_curve_opt: Option<Arc<dyn InterestRateCurve>>, pricing_condition: PricingCondition) -> CashFlows {
+        let mut cash_flows: CashFlows = CashFlows::new();
+        // projected flows的include_horizon邏輯與past flows相反（不inverted）
+        let include_horizon: bool = *pricing_condition.include_horizon_flow();
+        let pricing_date: NaiveDate = *pricing_condition.horizon();
+        let pay_nominal_flow = self.capitalization_flow_list().first().unwrap();
+
+        // 期初本金支出若還沒發生，則屬於projected pay flow
+        if pay_nominal_flow.payment_date() > pricing_date ||
+           (pay_nominal_flow.payment_date() == pricing_date && include_horizon) {
+            cash_flows[&pay_nominal_flow.payment_date()] -= pay_nominal_flow.amount();
+        }
+
+        cash_flows
+    }
+
+    fn projected_receive_flows(&self, forward_curve_opt: Option<Arc<dyn InterestRateCurve>>, pricing_condition: PricingCondition) -> CashFlows {
+        let mut cash_flows: CashFlows = CashFlows::new();
+        // projected flows的include_horizon邏輯與past flows相反（不inverted）
+        let include_horizon: bool = *pricing_condition.include_horizon_flow();
+        let horizon: NaiveDate = *pricing_condition.horizon();
+        let receive_nominal_flow = self.capitalization_flow_list().last().unwrap();
+
+        // 期末本金回收若還沒發生，則屬於projected receive flow
+        if receive_nominal_flow.payment_date() > horizon ||
+           (receive_nominal_flow.payment_date() == horizon && include_horizon) {
+            cash_flows[&receive_nominal_flow.payment_date()] += receive_nominal_flow.amount();
+        }
+
+        // 若連最後一個flow都已是過去，不需要繼續
+        if self.flow_oberver_list().last().unwrap().payment_date() < horizon ||
+           (self.flow_oberver_list().last().unwrap().payment_date() == horizon && !include_horizon) {
+            return cash_flows;
+        }
+
+        // rounding邏輯：
+        // forward_curve_opt.is_some() → floating leg → 看estimated_flow
+        // forward_curve_opt.is_none() → fixed leg   → 看deterministic_flow
+        let is_floating = forward_curve_opt.is_some();
+        let rounding_digits_opt: Option<u32> = if is_floating {
+            if pricing_condition.dacimal_rounding().estimated_flow() {
+                Some(self.profit_and_loss_market.settlement_currency().digits())
+            } else {
+                None
+            }
+        } else {
+            if pricing_condition.dacimal_rounding().deterministic_flow() {
+                Some(self.profit_and_loss_market.settlement_currency().digits())
+            } else {
+                None
+            }
+        };
+
+        // partition_point找到第一個屬於projected（未來）的flow的位置
+        let pred = |flow_observer: &FlowObserver| {
+            if include_horizon {
+                flow_observer.payment_date() <= horizon
+            } else {
+                flow_observer.payment_date() < horizon
+            }
+        };
+
+        let pos = self.flow_oberver_list.partition_point(pred);
+
+        for i in pos..self.flow_oberver_list().len() {
+            cash_flows[&self.flow_oberver_list()[i].payment_date()] += self
+                .flow_oberver_list()[i]
+                .projected_flow(forward_curve_opt.as_ref(), &pricing_condition, rounding_digits_opt);
+        }
+
+        cash_flows
     }
 }

@@ -17,13 +17,15 @@ pub enum Position {
 }
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CurveFunction {
     PayDiscount,
     PayForward,
     ReceiveDiscount,
     ReceiveForward
 }
+
+
 
 
 pub trait Instrument {

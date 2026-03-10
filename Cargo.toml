@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-chrono = { version = "0.4.43", features = ["serde"] }
+chrono = { version = "0.4.44", features = ["serde"] }
 ndarray = "0.17.2"
 ndarray-linalg = { version = "0.18.1", features = ["intel-mkl-static"] }
 rust_decimal = "1.40.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-uuid = "1.21.0"
+uuid = "1.22.0"
+thiserror = "2"
