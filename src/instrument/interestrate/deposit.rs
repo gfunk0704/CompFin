@@ -67,8 +67,10 @@ impl Deposit {
             flow_oberver_list.push(FlowObserver::new(leg_characters.clone(), nominal, i));
         }
 
+        // curve_name_map的建構邏輯：Deposit只有一個leg，所以reference curve就是profit_and_loss_market的discount curve；如果leg有reference curve（floating leg才會有），則加入forward curve
         let mut curve_name_map: HashMap<CurveFunction, String> = HashMap::new();
         curve_name_map.insert(CurveFunction::ReceiveDiscount, profit_and_loss_market.discount_curve_name().to_string());
+        curve_name_map.insert(CurveFunction::PayDiscount, profit_and_loss_market.discount_curve_name().to_string());
 
         if leg_characters.reference_curve_name().is_some() {
             curve_name_map.insert(CurveFunction::ReceiveForward, leg_characters.reference_curve_name().unwrap().to_string());
