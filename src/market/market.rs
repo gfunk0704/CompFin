@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 use super::currency::Currency;
 use super::super::time::calendar::holidaycalendar::HolidayCalendar;
 
-pub trait Market : Send + Sync{
+pub trait Market : Send + Sync {
     fn discount_curve_name(&self) -> &String;
 
     fn settlement_calendar(&self) -> Arc<dyn HolidayCalendar>;

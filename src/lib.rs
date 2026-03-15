@@ -7,6 +7,7 @@ pub mod instrument {
     pub mod interestrate {
         pub mod flowobserver;
         pub mod deposit;
+        pub mod interestrateswap;
     }
 
     pub mod leg {
@@ -48,6 +49,12 @@ pub mod market {
     pub mod fxmarket;
 }
 
+pub mod marketdata {
+    pub mod fx {
+        pub mod fxspotratesheet;
+    }
+}
+
 pub mod math {
     pub mod curve {
         pub mod curve;
@@ -64,6 +71,9 @@ pub mod model {
     pub mod interestrate {
         pub mod interestratecurve;
         pub mod precomputeddiscountcurve;
+        pub mod deterministicinterestratecurve {
+            pub mod deterministicinterestratecurve;
+        }
     }
 }
 

@@ -4,8 +4,6 @@ use std::cell::{
     RefMut
 };
 
-use chrono::NaiveDate;
-
 use crate::interestrate::compounding::Compounding;
 use crate::time::daycounter::daycounter::DayCounter;
 use crate::time::schedule::schedule::Schedule;
@@ -28,7 +26,7 @@ impl NominalSetter {
         self.initial_nominal.get()
     }
 
-    pub fn set_initial_nominal(&self, initial_nominal: f64) -> () {
+    pub fn set_initial_nominal(&self, initial_nominal: f64) {
         self.initial_nominal.set(initial_nominal);
     }
 
@@ -36,18 +34,17 @@ impl NominalSetter {
         self.rate.get()
     }
 
-    pub fn set_rate(&self, rate: f64) -> () {
+    pub fn set_rate(&self, rate: f64) {
         self.rate.set(rate);
     }
 }
 
 
-
 pub trait NominalGenerator {
     fn setter(&self) -> RefMut<'_, NominalSetter>;
 
-    fn generate_nominal(&self, 
-                        schedule: &Schedule) -> Vec<(NaiveDate, f64)>;
+    // 回傳每個 schedule period 對應的名目本金，與 schedule_periods() 一對一對應
+    fn generate_nominal(&self, schedule: &Schedule) -> Vec<f64>;
 }
 
 
@@ -68,15 +65,11 @@ impl NominalGenerator for FixedNominalGenerator {
         self.setter.borrow_mut()
     }
 
-    fn generate_nominal(&self, 
-                        schedule: &Schedule) -> Vec<(NaiveDate, f64)> {
+    fn generate_nominal(&self, schedule: &Schedule) -> Vec<f64> {
         let initial_nominal = self.setter.borrow().initial_nominal();
-        let mut nominals: Vec<(NaiveDate, f64)> = Vec::new();
-        for period in schedule.schedule_periods() {
-            nominals.push((period.calculation_period().start_date(), initial_nominal));
-        }   
-        nominals        
-    }        
+        // 每個 period 的名目本金都相同
+        vec![initial_nominal; schedule.schedule_periods().len()]
+    }
 }
 
 
@@ -110,23 +103,25 @@ impl NominalGenerator for AccretingNominalGenerator {
         self.setter.borrow_mut()
     }
 
-    fn generate_nominal(&self, 
-                        schedule: &Schedule) -> Vec<(NaiveDate, f64)> {
-
-        let mut nominals: Vec<(NaiveDate, f64)> = Vec::new();
-        let mut current_nominal = self.setter.borrow().initial_nominal();
+    fn generate_nominal(&self, schedule: &Schedule) -> Vec<f64> {
+        let periods = schedule.schedule_periods();
         let rate = self.setter.borrow().rate();
-        nominals.push((schedule.schedule_periods()[0].calculation_period().start_date(), current_nominal));
+        let mut current_nominal = self.setter.borrow().initial_nominal();
 
-        for period in schedule.schedule_periods().split_last().unwrap().1.iter() {
-            let start_date = period.calculation_period().start_date();
-            let end_date = period.calculation_period().end_date();
-            let tau = self.day_counter.year_fraction(start_date, end_date);
+        let mut nominals = Vec::with_capacity(periods.len());
+        nominals.push(current_nominal);
+
+        // 最後一個 period 的名目本金由前一個 period 推算，不需要再複利
+        for period in periods.split_last().unwrap().1 {
+            let cp = period.calculation_period();
+            let tau = self.day_counter.year_fraction(
+                cp.start_date(),
+                cp.end_date(),
+            );
             current_nominal *= self.compounding.future_value(rate, tau);
-            nominals.push((start_date, current_nominal));
+            nominals.push(current_nominal);
+        }
 
-        }   
-
-        nominals        
-    }        
+        nominals
+    }
 }
