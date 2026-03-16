@@ -73,6 +73,7 @@ pub mod model {
         pub mod precomputeddiscountcurve;
         pub mod deterministicinterestratecurve {
             pub mod deterministicinterestratecurve;
+            pub mod piecewisepolyinterestratecurve;
         }
     }
 }
