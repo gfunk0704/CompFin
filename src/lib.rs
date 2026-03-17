@@ -72,6 +72,7 @@ pub mod model {
         pub mod interestratecurve;
         pub mod precomputeddiscountcurve;
         pub mod deterministicinterestratecurve {
+            pub mod curvegenerationerror;
             pub mod deterministicinterestratecurve;
             pub mod piecewisepolyinterestratecurve;
         }
@@ -135,10 +136,3 @@ pub mod value {
     pub mod cashflows;
     pub mod npv;
 }
-
-
-
-
-
-
-

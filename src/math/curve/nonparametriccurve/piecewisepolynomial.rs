@@ -607,3 +607,5 @@ impl CurveIntegration for PiecewisePolynomial {
         }
     }
 }
+
+

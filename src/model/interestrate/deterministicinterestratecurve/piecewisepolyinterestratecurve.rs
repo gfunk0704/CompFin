@@ -10,11 +10,11 @@ use crate::math::curve::curve::{
     Curve,
     CurveIntegration
 };
-use crate::math::curve::nonparametriccurve::nonparametriccurve::NonparametricCurve;
-use crate::math::curve::nonparametriccurve::piecewisepolynomial::PiecewisePolynomial;
+use crate::math::curve::nonparametriccurve::nonparametriccurve::{NonparametricCurve, Point2D};
+use crate::math::curve::nonparametriccurve::piecewisepolynomial::{PiecewisePolynomial, PolynomialType};
+use crate::model::interestrate::deterministicinterestratecurve::curvegenerationerror::CurveGenerationError;
 use crate::model::interestrate::deterministicinterestratecurve::deterministicinterestratecurve::{
-    DeterministicInterestRateCurve,
-    InstantaneousForwardRateCurve
+    DeterministicInterestRateCurve, DeterministicInterestRateCurveGenerator, InstantaneousForwardRateCurve
 };
 use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::time::daycounter::daycounter::DayCounter;
@@ -217,3 +217,126 @@ impl InstantaneousForwardRateCurve for PiecewisePolyInterestRateCurve {
 }
 
 impl DeterministicInterestRateCurve for PiecewisePolyInterestRateCurve {}
+
+
+pub struct PiecewisePolyInterestRateCurveGenerator {
+    reference_date: NaiveDate,
+    day_counter: Arc<DayCounter>,
+    polynomial_type: PolynomialType,
+    interpolation_target: InterpolationTarget,
+    left_extrapolation: ExtrapolationMethod,
+    right_extrapolation: ExtrapolationMethod,
+    dates: Vec<NaiveDate>,
+    times: Vec<f64>,
+}
+
+impl PiecewisePolyInterestRateCurveGenerator {
+    pub fn new(
+        reference_date: NaiveDate,
+        day_counter: Arc<DayCounter>,
+        polynomial_type: PolynomialType,
+        interpolation_target: InterpolationTarget,
+        left_extrapolation: ExtrapolationMethod,
+        right_extrapolation: ExtrapolationMethod,
+    ) -> Self {
+        Self {
+            reference_date,
+            day_counter,
+            polynomial_type,
+            interpolation_target,
+            left_extrapolation,
+            right_extrapolation,
+            dates: Vec::new(),
+            times: Vec::new(),
+        }
+    }
+
+    pub fn polynomial_type(&self) -> PolynomialType {
+        self.polynomial_type
+    }
+
+    pub fn interpolation_target(&self) -> InterpolationTarget {
+        self.interpolation_target
+    }
+
+    pub fn left_extrapolation(&self) -> ExtrapolationMethod {
+        self.left_extrapolation
+    }
+
+    pub fn right_extrapolation(&self) -> ExtrapolationMethod {
+        self.right_extrapolation
+    }
+
+    pub fn dates(&self) -> &Vec<NaiveDate> {
+        &self.dates
+    }
+
+    pub fn set_dates(&mut self, dates: Vec<NaiveDate>) {
+        self.dates = dates;
+        self.times = self
+            .dates
+            .iter()
+            .map(|d| self.day_counter.year_fraction(self.reference_date, *d))
+            .collect(); 
+    }
+}
+
+
+impl DeterministicInterestRateCurveGenerator for PiecewisePolyInterestRateCurveGenerator {
+    fn reference_date(&self) -> NaiveDate {
+        self.reference_date
+    }
+
+    fn day_counter(&self) -> &Arc<DayCounter> {
+        &self.day_counter
+    }
+
+    fn generate(
+        &self,
+        values: Vec<f64>,
+    ) -> Result<Arc<dyn DeterministicInterestRateCurve>, CurveGenerationError> {
+        // values長度必須與dates一致
+        if values.len() != self.times.len() {
+            return Err(CurveGenerationError::LengthMismatch {
+                values_len: values.len(),
+                dates_len: self.times.len(),
+            });
+        }
+
+        let points: Vec<Point2D> = self
+            .times
+            .iter()
+            .cloned()
+            .zip(values.iter().cloned())
+            .map(|(t, v)| Point2D::new(t, v))
+            .collect();
+
+        let curve = match self.interpolation_target {
+            InterpolationTarget::InstantaneousForwardRate => {
+                PiecewisePolynomial::new_with_integrals(self.polynomial_type, points)
+            }
+            InterpolationTarget::LogDiscount | InterpolationTarget::ZeroRate => {
+                PiecewisePolynomial::new_with_derivatives(self.polynomial_type, points)
+            }
+        };
+
+        // new_*回傳None代表節點數量不足以建構指定的polynomial type
+        let curve = curve.ok_or(CurveGenerationError::InsufficientPoints {
+            // 實際提供的節點數
+            provided: self.times.len(),
+            // polynomial type的最低需求由PiecewisePolynomial內部決定，
+            // 此處以2作為已知下限（所有type至少需要2個點），
+            // 實際錯誤訊息已足以讓呼叫端理解問題
+            required: 2,
+        })?;
+
+        Ok(Arc::new(PiecewisePolyInterestRateCurve::new(
+            self.reference_date,
+            self.day_counter.clone(),
+            curve,
+            self.interpolation_target,
+            self.left_extrapolation,
+            self.right_extrapolation,
+        )))
+    }
+}
