@@ -6,6 +6,7 @@ pub mod instrument {
 
     pub mod interestrate {
         pub mod flowobserver;
+        pub mod simpleinterestrateinstrumentgenerator;
         pub mod deposit;
         pub mod interestrateswap;
     }
@@ -50,8 +51,11 @@ pub mod market {
 }
 
 pub mod marketdata {
-    pub mod fx {
-        pub mod fxspotratesheet;
+    pub mod quote;
+
+    pub mod interestrate {
+        pub mod marketratequote;
+        pub mod depositratequote;
     }
 }
 

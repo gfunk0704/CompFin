@@ -146,8 +146,15 @@ impl CalculationPeriodGenerator {
         calendar: &Arc<dyn HolidayCalendar>,
         horizon: NaiveDate,
         maturity: NaiveDate,
+        start_date_opt: Option<NaiveDate>
     ) -> Option<Vec<CalculationPeriod>> {
-        self.generate_from_maturity_date_impl(calendar, horizon, maturity, true)
+        let start_date = start_date_opt.unwrap_or_else(|| {
+            calendar.shift_n_business_day(
+                horizon,
+                self.start_lag,
+            )
+        });
+        self.generate_from_maturity_date_impl(calendar, start_date, maturity, true)
     }
 
     pub fn generate_from_maturity_tenor(
@@ -155,22 +162,27 @@ impl CalculationPeriodGenerator {
         calendar: &Arc<dyn HolidayCalendar>,
         horizon: NaiveDate,
         maturity: Period,
+        start_date_opt: Option<NaiveDate>,
     ) -> Option<Vec<CalculationPeriod>> {
-        let start_date = calendar.shift_n_business_day(horizon, self.start_lag);
+        let start_date = start_date_opt.unwrap_or_else(|| {
+            calendar.shift_n_business_day(
+                horizon,
+                self.start_lag,
+            )
+        });
         let maturity_date = self
             .mat_adjuster
             .from_tenor_to_date(start_date, maturity, calendar);
-        self.generate_from_maturity_date(calendar, horizon, maturity_date)
+        self.generate_from_maturity_date(calendar, horizon, maturity_date, Some(start_date))
     }
 
     fn generate_from_maturity_date_impl(
         &self,
         calendar: &Arc<dyn HolidayCalendar>,
-        horizon: NaiveDate,
+        start_date: NaiveDate,
         maturity: NaiveDate,
         apply_stub_adjuster: bool,
     ) -> Option<Vec<CalculationPeriod>> {
-        let start_date = calendar.shift_n_business_day(horizon, self.start_lag);
         let end_criteria = self.end_criteria_generator.generate(start_date, maturity);
         let forward = self.direction() == GenerationDirection::Forward;
         let begin_date = if forward { start_date } else { maturity };

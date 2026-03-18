@@ -251,3 +251,8 @@ impl InstrumentWithLinearFlows for Deposit {
         cash_flows
     }
 }
+
+
+pub trait DepositGenerator {
+    
+}
