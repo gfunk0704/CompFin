@@ -1,7 +1,7 @@
 use chrono::NaiveDate;
 use serde::Deserialize;
 
-use super::scheduleperiod::CalculationPeriod;
+use crate::time::schedule::scheduleperiod::CalculationPeriod;
 
 
 // ─────────────────────────────────────────────────────────────────────────────

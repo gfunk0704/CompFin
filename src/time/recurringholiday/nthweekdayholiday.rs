@@ -5,7 +5,7 @@ use chrono::{
     Weekday
 };
 
-use super::recurringholiday::RecurringHoliday;
+use crate::time::recurringholiday::recurringholiday::RecurringHoliday;
 
 #[derive(Clone)]
 pub struct NthWeekdayHoliday {

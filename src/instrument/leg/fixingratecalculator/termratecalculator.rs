@@ -34,7 +34,7 @@ use std::sync::Arc;
 use chrono::NaiveDate;
 use serde::Deserialize;
 
-use super::fixingratecalculator::{FixingRateCalculator, FixingRateCalculatorGenerator};
+use crate::instrument::leg::fixingratecalculator::fixingratecalculator::{FixingRateCalculator, FixingRateCalculatorGenerator};
 use crate::interestrate::index::interestrateindex::InterestRateIndex;
 use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::pricingcondition::PricingCondition;

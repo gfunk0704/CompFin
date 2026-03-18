@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use serde_json;
 
-use super::managererror::{ManagerError, parse_json_value};
-use super::namedobject::NamedJsonObject;
+use crate::manager::managererror::{ManagerError, parse_json_value};
+use crate::manager::namedobject::NamedJsonObject;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 設計說明

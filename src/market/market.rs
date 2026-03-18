@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use chrono::NaiveDate;
 
-use super::currency::Currency;
-use super::super::time::calendar::holidaycalendar::HolidayCalendar;
+use crate::market::currency::Currency;
+use crate::time::calendar::holidaycalendar::HolidayCalendar;
 
 pub trait Market : Send + Sync {
     fn discount_curve_name(&self) -> &String;

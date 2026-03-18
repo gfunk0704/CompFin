@@ -53,16 +53,6 @@ impl YearBitset {
         block < 3 && (self.bits[block] & (1u128 << bit)) != 0
     }
 
-    /// Clears a day (marks as non-holiday)
-    #[inline]
-    fn clear(&mut self, day_of_year: u32) {
-        let block = (day_of_year / 128) as usize;
-        let bit = day_of_year % 128;
-        if block < 3 {
-            self.bits[block] &= !(1u128 << bit);
-        }
-    }
-
     /// Creates a bitset from all holidays in a year (including weekends).
     ///
     /// # 變更說明

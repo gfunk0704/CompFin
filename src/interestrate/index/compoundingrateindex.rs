@@ -32,19 +32,19 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 use chrono::{Days, NaiveDate};
 
-use super::compoundingconvention::{
+use crate::interestrate::index::compoundingconvention::{
     FixingConvention, MissingFixingFn, MissingFixingHandler,
     arbitrage_free_applicable, missing_fixing_fn_for,
 };
-use super::super::compounding::Compounding;
-use super::interestrateindex::{InterestRateIndex, InterestRateIndexType};
-use super::super::super::model::interestrate::interestratecurve::InterestRateCurve;
-use super::super::super::pricingcondition::PricingCondition;
-use super::super::super::time::businessdayadjuster::BusinessDayAdjuster;
-use super::super::super::time::calendar::holidaycalendar::HolidayCalendar;
-use super::super::super::time::daycounter::daycounter::DayCounter;
-use super::super::super::time::period::Period;
-use super::super::super::time::schedule::scheduleperiod::CalculationPeriod;
+use crate::interestrate::compounding::Compounding;
+use crate::interestrate::index::interestrateindex::{InterestRateIndex, InterestRateIndexType};
+use crate::model::interestrate::interestratecurve::InterestRateCurve;
+use crate::pricingcondition::PricingCondition;
+use crate::time::businessdayadjuster::BusinessDayAdjuster;
+use crate::time::calendar::holidaycalendar::HolidayCalendar;
+use crate::time::daycounter::daycounter::DayCounter;
+use crate::time::period::Period;
+use crate::time::schedule::scheduleperiod::CalculationPeriod;
 
 
 pub struct CompoundingRateIndex {

@@ -7,8 +7,8 @@ use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::time::period::Period;
 use crate::value::cashflows::CashFlows;
 
-use super::super::market::market::Market;
-use super::super::pricingcondition::PricingCondition;
+use crate::market::market::Market;
+use crate::pricingcondition::PricingCondition;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Position {

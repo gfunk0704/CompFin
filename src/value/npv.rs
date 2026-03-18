@@ -5,7 +5,7 @@ use std::ops::{
 
 use chrono::NaiveDate;
 
-use super::super::market::currency::Currency;
+use crate::market::currency::Currency;
 
 
 pub struct NPV {

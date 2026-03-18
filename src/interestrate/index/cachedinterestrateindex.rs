@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use chrono::NaiveDate;
 
-use super::cachebackend::{CacheBackend, RefCellBackend, RwLockBackend};
-use super::interestrateindex::{InterestRateIndex, InterestRateIndexType};
+use crate::interestrate::index::cachebackend::{CacheBackend, RefCellBackend, RwLockBackend};
+use crate::interestrate::index::interestrateindex::{InterestRateIndex, InterestRateIndexType};
 use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::pricingcondition::PricingCondition;
 use crate::time::businessdayadjuster::BusinessDayAdjuster;

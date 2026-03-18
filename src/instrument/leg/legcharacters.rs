@@ -162,12 +162,16 @@ pub trait LegCharactersGenerator {
         &self,
         trade_date: NaiveDate,
         maturity: NaiveDate,
+        start_date_opt: Option<NaiveDate>
     ) -> Result<Arc<dyn LegCharacters>, String> {
         let schedule = self
             .schedule_generator()
             .generate_with_maturity_date(
                 trade_date, maturity,
-                self.calendar(), self.fixing_calendar(), self.payment_calendar(),
+                self.calendar(), 
+                self.fixing_calendar(), 
+                self.payment_calendar(),
+                start_date_opt
             )
             .ok_or_else(|| "Failed to generate schedule from maturity date".to_string())?;
         Ok(self.generate_with_schedule(schedule))
@@ -177,12 +181,16 @@ pub trait LegCharactersGenerator {
         &self,
         trade_date: NaiveDate,
         maturity: Period,
+        start_date_opt: Option<NaiveDate>
     ) -> Result<Arc<dyn LegCharacters>, String> {
         let schedule = self
             .schedule_generator()
             .generate_from_maturity_tenor(
                 trade_date, maturity,
-                self.calendar(), self.fixing_calendar(), self.payment_calendar(),
+                self.calendar(), 
+                self.fixing_calendar(), 
+                self.payment_calendar(),
+                start_date_opt
             )
             .ok_or_else(|| "Failed to generate schedule from maturity tenor".to_string())?;
         Ok(self.generate_with_schedule(schedule))

@@ -10,7 +10,7 @@ use serde::{
     Deserialize
 };
 
-use super::super::period::Period;
+use crate::time::period::Period;
 
 
 #[derive(PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]

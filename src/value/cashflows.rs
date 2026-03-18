@@ -13,7 +13,7 @@ use std::rc::Rc;
 
 use chrono::NaiveDate;
 
-use super::super::model::interestrate::interestratecurve::InterestRateCurve;
+use crate::model::interestrate::interestratecurve::InterestRateCurve;
 
 
 pub struct CashFlows {

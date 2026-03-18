@@ -2,7 +2,7 @@ use std::sync::Arc; // 變更：Rc → Arc
 
 use chrono::{Days, NaiveDate};
 
-use super::super::schedule::schedule::Schedule;
+use crate::time::schedule::schedule::Schedule;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Traits：全部加入 Send + Sync supertrait

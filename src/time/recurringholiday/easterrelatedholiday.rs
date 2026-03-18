@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
-use super::super::period::Period;
-use super::recurringholiday::RecurringHoliday;
+use crate::time::period::Period;
+use crate::time::recurringholiday::recurringholiday::RecurringHoliday;
 
 #[derive(PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub enum EasterType {

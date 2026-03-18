@@ -7,8 +7,8 @@ use chrono::{
     Weekday
 };
 
-use super::recurringholiday::RecurringHoliday;
-use super::weekendadjustment::{
+use crate::time::recurringholiday::recurringholiday::RecurringHoliday;
+use crate::time::recurringholiday::weekendadjustment::{
     WeekendAdjustment, 
     WeekendAdjustmentRule
 };

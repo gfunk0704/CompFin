@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use chrono::{Datelike, Days, NaiveDate, Weekday};
 
-use super::recurringholiday::RecurringHoliday;
+use crate::time::recurringholiday::recurringholiday::RecurringHoliday;
 
 #[derive(Clone)]
 pub struct LastWeekdayHoliday {
