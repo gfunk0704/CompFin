@@ -28,7 +28,7 @@ pub enum CurveFunction {
 
 
 
-pub trait Instrument {
+pub trait Instrument: Send + Sync {
     fn max_date(&self) -> NaiveDate;
     
     fn position(&self) -> Position;

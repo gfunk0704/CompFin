@@ -1,8 +1,4 @@
-use std::cell::{
-    Cell,
-    RefCell,
-    RefMut
-};
+use std::sync::RwLock;
 
 use crate::interestrate::compounding::Compounding;
 use crate::time::daycounter::daycounter::DayCounter;
@@ -10,64 +6,63 @@ use crate::time::schedule::schedule::Schedule;
 
 
 pub struct NominalSetter {
-    initial_nominal: Cell<f64>,
-    rate: Cell<f64>
+    initial_nominal: RwLock<f64>,
+    rate: RwLock<f64>,
 }
 
 impl NominalSetter {
     pub fn new() -> Self {
-        NominalSetter { 
-            initial_nominal: Cell::new(1000000.0),
-            rate: Cell::new(0.00)
+        Self {
+            initial_nominal: RwLock::new(1_000_000.0),
+            rate: RwLock::new(0.0),
         }
     }
 
     pub fn initial_nominal(&self) -> f64 {
-        self.initial_nominal.get()
+        *self.initial_nominal.read().unwrap()
     }
 
-    pub fn set_initial_nominal(&self, initial_nominal: f64) {
-        self.initial_nominal.set(initial_nominal);
+    pub fn set_initial_nominal(&self, v: f64) {
+        *self.initial_nominal.write().unwrap() = v;
     }
 
     pub fn rate(&self) -> f64 {
-        self.rate.get()
+        *self.rate.read().unwrap()
     }
 
-    pub fn set_rate(&self, rate: f64) {
-        self.rate.set(rate);
+    pub fn set_rate(&self, v: f64) {
+        *self.rate.write().unwrap() = v;
     }
 }
 
 
-pub trait NominalGenerator {
-    fn setter(&self) -> RefMut<'_, NominalSetter>;
+pub trait NominalGenerator: Send + Sync {
+    fn setter(&self) -> &NominalSetter;
 
-    // 回傳每個 schedule period 對應的名目本金，與 schedule_periods() 一對一對應
+    // 回傳每個schedule period對應的名目本金，與schedule_periods()一對一對應
     fn generate_nominal(&self, schedule: &Schedule) -> Vec<f64>;
 }
 
 
 pub struct FixedNominalGenerator {
-    setter: RefCell<NominalSetter>
+    setter: NominalSetter,
 }
 
 impl FixedNominalGenerator {
     pub fn new() -> Self {
-        FixedNominalGenerator { 
-            setter: RefCell::new(NominalSetter::new())
+        Self {
+            setter: NominalSetter::new(),
         }
     }
 }
 
 impl NominalGenerator for FixedNominalGenerator {
-    fn setter(&self) -> RefMut<'_, NominalSetter> {
-        self.setter.borrow_mut()
+    fn setter(&self) -> &NominalSetter {
+        &self.setter
     }
 
     fn generate_nominal(&self, schedule: &Schedule) -> Vec<f64> {
-        let initial_nominal = self.setter.borrow().initial_nominal();
-        // 每個 period 的名目本金都相同
+        let initial_nominal = self.setter.initial_nominal();
         vec![initial_nominal; schedule.schedule_periods().len()]
     }
 }
@@ -76,16 +71,15 @@ impl NominalGenerator for FixedNominalGenerator {
 pub struct AccretingNominalGenerator {
     day_counter: DayCounter,
     compounding: Compounding,
-    setter: RefCell<NominalSetter>
+    setter: NominalSetter,
 }
 
 impl AccretingNominalGenerator {
-    pub fn new(day_counter: DayCounter,
-               compounding: Compounding) -> Self {
-        AccretingNominalGenerator { 
+    pub fn new(day_counter: DayCounter, compounding: Compounding) -> Self {
+        Self {
             day_counter,
             compounding,
-            setter: RefCell::new(NominalSetter::new())
+            setter: NominalSetter::new(),
         }
     }
 
@@ -99,19 +93,19 @@ impl AccretingNominalGenerator {
 }
 
 impl NominalGenerator for AccretingNominalGenerator {
-    fn setter(&self) -> RefMut<'_, NominalSetter> {
-        self.setter.borrow_mut()
+    fn setter(&self) -> &NominalSetter {
+        &self.setter
     }
 
     fn generate_nominal(&self, schedule: &Schedule) -> Vec<f64> {
         let periods = schedule.schedule_periods();
-        let rate = self.setter.borrow().rate();
-        let mut current_nominal = self.setter.borrow().initial_nominal();
+        let rate = self.setter.rate();
+        let mut current_nominal = self.setter.initial_nominal();
 
         let mut nominals = Vec::with_capacity(periods.len());
         nominals.push(current_nominal);
 
-        // 最後一個 period 的名目本金由前一個 period 推算，不需要再複利
+        // 最後一個period的名目本金由前一個period推算，不需要再複利
         for period in periods.split_last().unwrap().1 {
             let cp = period.calculation_period();
             let tau = self.day_counter.year_fraction(
