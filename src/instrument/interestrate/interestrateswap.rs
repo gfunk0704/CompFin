@@ -2,16 +2,31 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::NaiveDate;
+use serde::Deserialize;
 
 use crate::instrument::instrument::{
     CurveFunction,
     Instrument,
     InstrumentWithLinearFlows,
-    Position,
+    Position, SimpleInstrument,
 };
 use crate::instrument::interestrate::flowobserver::FlowObserver;
-use crate::instrument::nominalgenerator::NominalGenerator;
-use crate::instrument::leg::legcharacters::LegCharacters;
+use crate::instrument::interestrate::simpleinterestrateinstrumentgenerator::{
+    build_leg_characters_generator,
+    InterestRateInstrumentSupports,
+    LegJsonProp,
+    SimpleInterestRateInstrumentGenerator,
+};
+use crate::instrument::leg::legcharacters::{LegCharacters, LegCharactersGenerator};
+use crate::instrument::nominalgenerator::{
+    AccretingNominalGenerator,
+    FixedNominalGenerator,
+    NominalGenerator,
+};
+use crate::interestrate::compounding::Compounding;
+use crate::manager::manager::{JsonLoader, ManagerBuilder};
+use crate::manager::managererror::{ManagerError, parse_json_value};
+use crate::manager::namedobject::NamedJsonObject;
 use crate::market::market::Market;
 use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::pricingcondition::PricingCondition;
@@ -22,11 +37,9 @@ pub struct InterestRateSwap {
     position: Position,
     profit_and_loss_market: Arc<dyn Market>,
     pay_leg_characters: Arc<dyn LegCharacters>,
-    pay_leg_nominal_generator: Arc<dyn NominalGenerator>,
     pay_leg_flow_observer_list: Vec<FlowObserver>,
     receive_leg_characters: Arc<dyn LegCharacters>,
     receive_leg_flow_observer_list: Vec<FlowObserver>,
-    receive_leg_nominal_generator: Arc<dyn NominalGenerator>,
     curve_name_map: HashMap<CurveFunction, String>,
 }
 
@@ -35,17 +48,17 @@ impl InterestRateSwap {
         position: Position,
         profit_and_loss_market: Arc<dyn Market>,
         pay_leg_characters: Arc<dyn LegCharacters>,
-        pay_leg_nominal_generator: Arc<dyn NominalGenerator>,
+        pay_leg_nominals: Vec<f64>,
         receive_leg_characters: Arc<dyn LegCharacters>,
-        receive_leg_nominal_generator: Arc<dyn NominalGenerator>,
+        receive_leg_nominals: Vec<f64>,
     ) -> Self {
         let pay_leg_flow_observer_list = Self::build_flow_observer_list(
             &pay_leg_characters,
-            &pay_leg_nominal_generator,
+            pay_leg_nominals,
         );
         let receive_leg_flow_observer_list = Self::build_flow_observer_list(
             &receive_leg_characters,
-            &receive_leg_nominal_generator,
+            receive_leg_nominals,
         );
 
         // IRS兩條腿共用同一個market的discount curve
@@ -70,10 +83,8 @@ impl InterestRateSwap {
             position,
             profit_and_loss_market,
             pay_leg_characters,
-            pay_leg_nominal_generator,
             pay_leg_flow_observer_list,
             receive_leg_characters,
-            receive_leg_nominal_generator,
             receive_leg_flow_observer_list,
             curve_name_map,
         }
@@ -87,21 +98,11 @@ impl InterestRateSwap {
         &self.receive_leg_characters
     }
 
-    pub fn pay_leg_nominal_generator(&self) -> &Arc<dyn NominalGenerator> {
-        &self.pay_leg_nominal_generator
-    }
-
-    pub fn receive_leg_nominal_generator(&self) -> &Arc<dyn NominalGenerator> {
-        &self.receive_leg_nominal_generator
-    }
-
     fn build_flow_observer_list(
         leg_characters: &Arc<dyn LegCharacters>,
-        nominal_generator: &Arc<dyn NominalGenerator>,
+        nominals: Vec<f64>,
     ) -> Vec<FlowObserver> {
-        let schedule = leg_characters.generic_characters().schedule();
-        nominal_generator
-            .generate_nominal(schedule)
+        nominals
             .into_iter()
             .enumerate()
             .map(|(i, nominal)| FlowObserver::new(leg_characters.clone(), nominal, i))
@@ -284,5 +285,275 @@ impl InstrumentWithLinearFlows for InterestRateSwap {
             index_rounding,
             1.0,
         )
+    }
+}
+
+impl SimpleInstrument for InterestRateSwap {}
+
+
+pub struct InterestRateSwapGenerator {
+    profit_and_loss_market: Arc<dyn Market>,
+    pay_leg_character_genrator: Arc<dyn LegCharactersGenerator>,
+    pay_leg_nominal_generator: Arc<dyn NominalGenerator>,
+    receive_leg_character_genrator: Arc<dyn LegCharactersGenerator>,
+    receive_leg_nominal_generator: Arc<dyn NominalGenerator>,
+}
+
+impl InterestRateSwapGenerator {
+    pub fn new(
+        profit_and_loss_market: Arc<dyn Market>,
+        pay_leg_character_genrator: Arc<dyn LegCharactersGenerator>,
+        pay_leg_nominal_generator: Arc<dyn NominalGenerator>,
+        receive_leg_character_genrator: Arc<dyn LegCharactersGenerator>,
+        receive_leg_nominal_generator: Arc<dyn NominalGenerator>,
+    ) -> Self {
+        Self {
+            profit_and_loss_market,
+            pay_leg_character_genrator,
+            pay_leg_nominal_generator,
+            receive_leg_character_genrator,
+            receive_leg_nominal_generator,
+        }
+    }
+
+    pub fn pay_leg_character_genrator(&self) -> &Arc<dyn LegCharactersGenerator> {
+        &self.pay_leg_character_genrator
+    }
+
+    pub fn receive_leg_character_genrator(&self) -> &Arc<dyn LegCharactersGenerator> {
+        &self.receive_leg_character_genrator
+    }
+
+    pub fn pay_leg_nominal_generator(&self) -> &Arc<dyn NominalGenerator> {
+        &self.pay_leg_nominal_generator
+    }
+
+    pub fn receive_leg_nominal_generator(&self) -> &Arc<dyn NominalGenerator> {
+        &self.receive_leg_nominal_generator
+    }
+}
+
+
+impl SimpleInterestRateInstrumentGenerator for InterestRateSwapGenerator {
+    fn profit_and_loss_market(&self) -> &Arc<dyn Market> {
+        &self.profit_and_loss_market
+    }
+
+    fn generate_with_maturity_date(
+        &self, 
+        position: Position, 
+        trade_date: NaiveDate,
+        maturity_date: NaiveDate,
+        start_date_opt: Option<NaiveDate>
+    ) -> Result<Arc<dyn SimpleInstrument>, String> {
+        let pay_leg_characters = self.pay_leg_character_genrator.generate_with_maturity_date(
+            trade_date,
+            maturity_date,
+            start_date_opt,
+        )?;
+        
+        let receive_leg_characters = self.receive_leg_character_genrator.generate_with_maturity_date(
+            trade_date,
+            maturity_date,
+            start_date_opt,
+        )?;
+
+        let pay_leg_nominals = self.pay_leg_nominal_generator.generate_nominal(
+            pay_leg_characters.generic_characters().schedule()
+        );
+
+        let receive_leg_nominals = self.receive_leg_nominal_generator.generate_nominal(
+            receive_leg_characters.generic_characters().schedule()
+        );
+
+        Ok(Arc::new(InterestRateSwap::new(
+            position,
+            self.profit_and_loss_market.clone(),
+            pay_leg_characters,
+            pay_leg_nominals,
+            receive_leg_characters,
+            receive_leg_nominals,
+        )))
+    }
+
+    fn generate_with_maturity_tenor(
+            &self, 
+            position: Position, 
+            trade_date: NaiveDate,
+            maturity_tenor: crate::time::period::Period,
+            start_date_opt: Option<NaiveDate>
+        ) -> Result<Arc<dyn SimpleInstrument>, String> {
+        let pay_leg_characters = self.pay_leg_character_genrator.generate_with_maturity_tenor(
+            trade_date,
+            maturity_tenor,
+            start_date_opt,
+        )?;
+
+        let receive_leg_characters = self.receive_leg_character_genrator.generate_with_maturity_tenor(
+            trade_date,
+            maturity_tenor,
+            start_date_opt,
+        )?;
+
+        let pay_leg_nominals = self.pay_leg_nominal_generator.generate_nominal(
+            pay_leg_characters.generic_characters().schedule()
+        );
+
+        let receive_leg_nominals = self.receive_leg_nominal_generator.generate_nominal(
+            receive_leg_characters.generic_characters().schedule()
+        );
+
+        Ok(Arc::new(InterestRateSwap::new(
+            position,
+            self.profit_and_loss_market.clone(),
+            pay_leg_characters,
+            pay_leg_nominals,
+            receive_leg_characters,
+            receive_leg_nominals,
+        )))
+    }
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// InterestRateSwapGeneratorLoader
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// 設計說明：
+//   Pay / receive 兩條腿直接以 LegJsonProp 內嵌在 JSON 中，
+//   閱讀一份 JSON 就能理解整筆 IRS 的完整結構。
+//
+//   NominalGenerator 同樣以 #[serde(tag = "type")] 的方式內嵌：
+//     - "Fixed"    → FixedNominalGenerator（每期本金相同）
+//     - "Accreting"→ AccretingNominalGenerator（本金按複利遞增）
+//   AccretingNominalGenerator 需要的 DayCounterGenerator 從
+//   InterestRateInstrumentSupports.3 查找，不增加額外的 supports 欄位。
+//
+// JSON 範例（固定 vs. 浮動，固定名目本金）：
+//   {
+//     "name": "TWD_IRS_3Mv6M",
+//     "market": "TWD_MARKET",
+//     "pay_leg": {
+//       "type": "Fixed",
+//       "calendar": "TWD",
+//       "schedule_generator": "TWD_3M_SCHED",
+//       "day_counter_generator": "ACT365",
+//       "compounding": "Simple",
+//       "rate": 0.0200
+//     },
+//     "pay_leg_nominal":  { "type": "Fixed", "initial_nominal": 100000000.0 },
+//     "receive_leg": {
+//       "type": "Floating",
+//       "calendar": "TWD",
+//       "schedule_generator": "TWD_6M_SCHED",
+//       "day_counter_generator": "ACT365",
+//       "compounding": "Simple",
+//       "index": "TWD_LIBOR_6M",
+//       "spread": 0.0
+//     },
+//     "receive_leg_nominal": { "type": "Fixed", "initial_nominal": 100000000.0 }
+//   }
+//
+// JSON 範例（遞增名目本金的 pay leg）：
+//   "pay_leg_nominal": {
+//     "type": "Accreting",
+//     "initial_nominal": 100000000.0,
+//     "rate": 0.03,
+//     "day_counter_generator": "ACT365",
+//     "compounding": "Annual"
+//   }
+
+/// 名目本金產生器的內嵌 JSON 定義。
+///
+/// 以 `type` 欄位區分，對應到 [`FixedNominalGenerator`] 或 [`AccretingNominalGenerator`]。
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+enum NominalGeneratorJsonProp {
+    /// 固定名目本金：每個 schedule period 的本金均相同。
+    Fixed {
+        initial_nominal: f64,
+    },
+    /// 遞增（複利累積）名目本金：本金隨每個 period 依利率複利成長。
+    ///
+    /// `day_counter_generator` 從 `InterestRateInstrumentSupports.3` 查找。
+    Accreting {
+        initial_nominal: f64,
+        rate: f64,
+        day_counter_generator: String,
+        compounding: Compounding,
+    },
+}
+
+#[derive(Deserialize)]
+struct InterestRateSwapGeneratorJsonProp {
+    market:               String,
+    pay_leg:              LegJsonProp,
+    pay_leg_nominal:      NominalGeneratorJsonProp,
+    receive_leg:          LegJsonProp,
+    receive_leg_nominal:  NominalGeneratorJsonProp,
+}
+
+/// [`NominalGeneratorJsonProp`] 轉換為 `Arc<dyn NominalGenerator>`。
+///
+/// `Accreting` 型別的 DayCounterGenerator 從 `InterestRateInstrumentSupports.3` 查找，
+/// 避免為此增加獨立的 supports 欄位。
+fn build_nominal_generator(
+    prop: NominalGeneratorJsonProp,
+    supports: &InterestRateInstrumentSupports,
+) -> Result<Arc<dyn NominalGenerator>, ManagerError> {
+    match prop {
+        NominalGeneratorJsonProp::Fixed { initial_nominal } => {
+            let gen = FixedNominalGenerator::new();
+            gen.setter().set_initial_nominal(initial_nominal);
+            Ok(Arc::new(gen))
+        }
+        NominalGeneratorJsonProp::Accreting { initial_nominal, rate, day_counter_generator, compounding } => {
+            let dcg = supports.3.get(&day_counter_generator)?;
+            // generate(None)：AccretingNominalGenerator 不依賴具體 schedule，可用預設參數
+            let day_counter = dcg.generate(None)?;
+            let gen = AccretingNominalGenerator::new(day_counter, compounding);
+            gen.setter().set_initial_nominal(initial_nominal);
+            gen.setter().set_rate(rate);
+            Ok(Arc::new(gen))
+        }
+    }
+}
+
+/// [`InterestRateSwapGenerator`] 的 JSON 載入器。
+///
+/// 實作 [`JsonLoader`]，搭配 [`InterestRateInstrumentSupports`] 使用。
+///
+/// # 使用方式
+/// ```rust
+/// let mut builder: ManagerBuilder<InterestRateSwapGenerator> = ManagerBuilder::new();
+/// InterestRateSwapGeneratorLoader
+///     .load_from_reader(&mut builder, "irs.json", &(market, cal, sched, dcg, idx))?;
+/// let frozen: FrozenManager<InterestRateSwapGenerator> = builder.build();
+/// ```
+pub struct InterestRateSwapGeneratorLoader;
+
+impl<'a> JsonLoader<InterestRateSwapGenerator, InterestRateInstrumentSupports<'a>>
+    for InterestRateSwapGeneratorLoader
+{
+    fn insert_obj_from_json(
+        &self,
+        builder: &mut ManagerBuilder<InterestRateSwapGenerator>,
+        json_value: serde_json::Value,
+        supports: &InterestRateInstrumentSupports<'a>,
+    ) -> Result<(), ManagerError> {
+        let named: NamedJsonObject = parse_json_value(json_value.clone())?;
+        let prop:  InterestRateSwapGeneratorJsonProp = parse_json_value(json_value)?;
+
+        let market       = supports.0.get(&prop.market)?;
+        let pay_leg      = build_leg_characters_generator(prop.pay_leg,     supports)?;
+        let receive_leg  = build_leg_characters_generator(prop.receive_leg, supports)?;
+        let pay_nominal  = build_nominal_generator(prop.pay_leg_nominal,    supports)?;
+        let recv_nominal = build_nominal_generator(prop.receive_leg_nominal, supports)?;
+
+        let generator = InterestRateSwapGenerator::new(
+            market, pay_leg, pay_nominal, receive_leg, recv_nominal,
+        );
+        builder.insert(named.name().to_owned(), Arc::new(generator));
+        Ok(())
     }
 }

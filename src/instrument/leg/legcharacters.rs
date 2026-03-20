@@ -142,7 +142,10 @@ impl GenericLegCharactersGenerator {
 // LegCharactersGenerator trait
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub trait LegCharactersGenerator {
+// Send + Sync 是必要的 supertrait，讓具體實作（FixedRateLegCharactersGenerator 等）
+// 能被存入 FrozenManager<dyn LegCharactersGenerator>，進而在多執行緒環境中安全共享。
+// 所有具體實作僅持有 Arc<...>，因此自動滿足此約束。
+pub trait LegCharactersGenerator: Send + Sync {
     fn generic_characters_generator(&self) -> &GenericLegCharactersGenerator;
 
     // ── 透過 accessor 存取，不直接碰私有欄位 ──

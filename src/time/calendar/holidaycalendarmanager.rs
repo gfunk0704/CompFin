@@ -5,7 +5,7 @@ use chrono::{NaiveDate, Weekday};
 use serde::Deserialize;
 use serde_json;
 
-use crate::manager::manager::{IManager, ManagerBuilder};
+use crate::manager::manager::{JsonLoader, ManagerBuilder};
 use crate::manager::managererror::{ManagerError, parse_json_value};
 use crate::manager::namedobject::NamedJsonObject;
 use crate::time::calendar::holidaycalendar::HolidayCalendar;
@@ -172,7 +172,7 @@ struct JointCalendarJsonProp {
 // HolidayCalendarLoader
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 假日曆的載入器，實作 `IManager<dyn HolidayCalendar, ()>`。
+/// 假日曆的載入器，實作 `JsonLoader<dyn HolidayCalendar, ()>`。
 ///
 /// # 相依處理與 retry 機制
 ///
@@ -196,13 +196,13 @@ struct JointCalendarJsonProp {
 ///
 /// self.get(&name)                →   builder.get(&name)
 /// self.map().insert(...)         →   builder.insert(...)
-/// 自有 insert_obj_from_json_vec  →   覆寫 IManager::insert_obj_from_json_vec
+/// 自有 insert_obj_from_json_vec  →   覆寫 JsonLoader::insert_obj_from_json_vec
 /// ```
 ///
 /// retry loop 的終止條件與演算法邏輯完全不變。
 pub struct HolidayCalendarLoader;
 
-impl IManager<dyn HolidayCalendar + Send + Sync, ()> for HolidayCalendarLoader {
+impl JsonLoader<dyn HolidayCalendar + Send + Sync, ()> for HolidayCalendarLoader {
 
     /// 嘗試從 JSON 解析一個 calendar 並插入 builder。
     ///

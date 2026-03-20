@@ -23,7 +23,7 @@ use crate::manager::namedobject::NamedJsonObject;
 //
 //   ┌── 載入階段（單執行緒，有序） ──────────────────────────────────────────┐
 //   │                                                                      │
-//   │   ManagerBuilder<V>     ← IManager 實作對象，可寫入                  │
+//   │   ManagerBuilder<V>     ← JsonLoader 實作對象將資料寫入此結構          │
 //   │         │                                                            │
 //   │         │  build()                                                   │
 //   │         ↓                                                            │
@@ -161,7 +161,7 @@ unsafe impl<V: ?Sized + Send + Sync> Sync for FrozenManager<V> {}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IManager
+// JsonLoader
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Manager 的載入介面。
@@ -174,7 +174,7 @@ unsafe impl<V: ?Sized + Send + Sync> Sync for FrozenManager<V> {}
 /// - `S`: 相依的外部資料（其他 FrozenManager 或設定），無相依時使用 `()`
 ///
 /// # 設計意圖
-/// 相對於舊的 `IManager`，新版本：
+/// 相對於舊的 `IManager` trait，新版本：
 /// - 移除 `map()` —— 儲存細節不應洩漏到介面
 /// - 移除 `get()` —— 查詢由 `FrozenManager` 負責
 /// - `insert_obj_from_json` 改為操作 `&mut ManagerBuilder<V>`，明確表達只在載入階段可寫
@@ -203,7 +203,7 @@ unsafe impl<V: ?Sized + Send + Sync> Sync for FrozenManager<V> {}
 ///     Ok(())
 /// }
 /// ```
-pub trait IManager<V: ?Sized + Send + Sync, S> {
+pub trait JsonLoader<V: ?Sized + Send + Sync, S> {
 
     /// 從單一 JSON 物件解析並插入 builder。
     ///
@@ -305,7 +305,7 @@ impl<V: Send + Sync + 'static> SimpleLoader<V> {
     }
 }
 
-impl<V: Send + Sync + 'static> IManager<V, ()> for SimpleLoader<V> {
+impl<V: Send + Sync + 'static> JsonLoader<V, ()> for SimpleLoader<V> {
     fn insert_obj_from_json(
         &self,
         builder: &mut ManagerBuilder<V>,

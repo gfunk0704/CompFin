@@ -11,7 +11,7 @@ use crate::interestrate::index::compoundingconvention::{FixingConvention, Missin
 use crate::interestrate::index::compoundingrateindex::CompoundingRateIndex;
 use crate::interestrate::index::interestrateindex::{InterestRateIndex, InterestRateIndexType};
 use crate::interestrate::index::termrateindex::TermRateIndex;
-use crate::manager::manager::{IManager, ManagerBuilder, FrozenManager};
+use crate::manager::manager::{JsonLoader, ManagerBuilder, FrozenManager};
 use crate::manager::managererror::{ManagerError, parse_json_value};
 use crate::manager::namedobject::NamedJsonObject;
 use crate::time::businessdayadjuster::BusinessDayAdjuster;
@@ -177,7 +177,7 @@ fn build_index_from_json(
 
 pub struct InterestRateIndexLoader;
 
-impl<'a> IManager<
+impl<'a> JsonLoader<
     dyn InterestRateIndex + Send + Sync,
     Supports<'a>,
 > for InterestRateIndexLoader {

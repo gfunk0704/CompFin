@@ -51,7 +51,12 @@ pub trait FixingRateCalculator: Send + Sync {
 }
 
 
-pub trait FixingRateCalculatorGenerator {
+// Send + Sync 是必要的 supertrait：
+// FloatingRateLegCharactersGenerator 以 Arc<dyn FixingRateCalculatorGenerator>
+// 持有此物件，而 LegCharactersGenerator: Send + Sync 要求其所有欄位皆為 Send + Sync。
+// 所有具體實作（TermRateCalculatorGenerator、CompoundingRateIndexCalculatorGenerator）
+// 僅持有 Arc<...>，自動滿足此約束。
+pub trait FixingRateCalculatorGenerator: Send + Sync {
     fn index(&self) -> &Arc<dyn InterestRateIndex + Send + Sync>;
 
     fn generate(&self, schedule: &Schedule) -> Arc<dyn FixingRateCalculator>;

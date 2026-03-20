@@ -1,7 +1,11 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{
+    Arc, 
+    RwLock
+};
 
 use chrono::NaiveDate;
+use serde::Deserialize;
 
 use crate::instrument::interestrate::flowobserver::{
     CapitalizationFlow, 
@@ -11,12 +15,22 @@ use crate::instrument::instrument::{
     CurveFunction, 
     Instrument, 
     InstrumentWithLinearFlows, 
-    Position
+    Position, SimpleInstrument
 };
-use crate::instrument::leg::legcharacters::LegCharacters;
+use crate::instrument::interestrate::simpleinterestrateinstrumentgenerator::{
+    build_leg_characters_generator,
+    InterestRateInstrumentSupports,
+    LegJsonProp,
+    SimpleInterestRateInstrumentGenerator,
+};
+use crate::instrument::leg::legcharacters::{LegCharacters, LegCharactersGenerator};
+use crate::manager::manager::{JsonLoader, ManagerBuilder};
+use crate::manager::managererror::{ManagerError, parse_json_value};
+use crate::manager::namedobject::NamedJsonObject;
 use crate::market::market::Market;
 use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::pricingcondition::PricingCondition;
+use crate::time::period::Period;
 use crate::value::cashflows::CashFlows;
 
 
@@ -253,6 +267,145 @@ impl InstrumentWithLinearFlows for Deposit {
 }
 
 
-pub trait DepositGenerator {
-    
+impl SimpleInstrument for Deposit {}
+
+
+pub struct DepositGenerator {
+    profit_and_loss_market: Arc<dyn Market>,
+    leg_character_genrator: Arc<dyn LegCharactersGenerator>,
+    nominal: RwLock<f64>
+}
+
+impl DepositGenerator {
+    pub fn new(profit_and_loss_market: Arc<dyn Market>, leg_character_genrator: Arc<dyn LegCharactersGenerator>, nominal: f64) -> Self {
+        Self {
+            profit_and_loss_market,
+            leg_character_genrator,
+            nominal: RwLock::new(nominal)
+        }
+    }
+
+    pub fn leg_character_genrator(&self) -> &Arc<dyn LegCharactersGenerator> {
+        &self.leg_character_genrator
+    }
+
+    pub fn nominal(&self) -> f64 {
+        *self.nominal.read().unwrap()
+    }
+
+    pub fn set_nominal(&self, v: f64) {
+        *self.nominal.write().unwrap() = v;
+    }
+}
+
+impl SimpleInterestRateInstrumentGenerator for DepositGenerator {
+    fn profit_and_loss_market(&self) -> &Arc<dyn Market> {
+        &self.profit_and_loss_market
+    }
+
+    fn generate_with_maturity_date(
+        &self, 
+        position: Position, 
+        trade_date: NaiveDate,
+        maturity_date: NaiveDate,
+        start_date_opt: Option<NaiveDate>
+    ) -> Result<Arc<dyn SimpleInstrument>, String> {
+        let leg_characters = self.leg_character_genrator.generate_with_maturity_date(trade_date, maturity_date, start_date_opt)?;
+        Ok(Arc::new(Deposit::new(position, self.nominal(), leg_characters, self.profit_and_loss_market.clone())))
+    }
+
+    fn generate_with_maturity_tenor(
+        &self, 
+        position: Position, 
+        trade_date: NaiveDate,
+        maturity_tenor: Period,
+        start_date_opt: Option<NaiveDate>
+    ) -> Result<Arc<dyn SimpleInstrument>, String> {
+        let leg_characters = self.leg_character_genrator.generate_with_maturity_tenor(trade_date, maturity_tenor, start_date_opt)?;
+        Ok(Arc::new(Deposit::new(position, self.nominal(), leg_characters, self.profit_and_loss_market.clone())))
+    }
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// DepositGeneratorLoader
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// 設計說明：
+//   Leg 定義直接內嵌在 JSON 中（而非透過名稱引用另一個 manager），
+//   讓一份 JSON 物件就能完整描述一個 Deposit 產品，不需要上下跳動查閱。
+//
+//   外部依賴（market / calendar / schedule / day_counter / index）仍以名稱
+//   引用，對應到 InterestRateInstrumentSupports 中的各 FrozenManager。
+//   這些才是真正跨產品共用的建構件。
+//
+// JSON 範例（固定利率 Deposit）：
+//   {
+//     "name": "TWD_3M_FIXED_DEPOSIT",
+//     "market": "TWD_MARKET",
+//     "nominal": 10000000.0,
+//     "leg": {
+//       "type": "Fixed",
+//       "calendar": "TWD",
+//       "schedule_generator": "TWD_3M_SCHED",
+//       "day_counter_generator": "ACT365",
+//       "compounding": "Simple",
+//       "rate": 0.0185
+//     }
+//   }
+//
+// JSON 範例（浮動利率 Deposit）：
+//   {
+//     "name": "USD_3M_FLOATING_DEPOSIT",
+//     "market": "USD_MARKET",
+//     "nominal": 5000000.0,
+//     "leg": {
+//       "type": "Floating",
+//       "calendar": "USD",
+//       "schedule_generator": "USD_3M_SCHED",
+//       "day_counter_generator": "ACT360",
+//       "compounding": "Simple",
+//       "index": "USD_LIBOR_3M",
+//       "spread": 0.0
+//     }
+//   }
+
+#[derive(Deserialize)]
+struct DepositGeneratorJsonProp {
+    market:  String,
+    nominal: f64,
+    /// Leg 定義直接內嵌，不透過獨立的 leg manager 查找。
+    leg:     LegJsonProp,
+}
+
+/// [`DepositGenerator`] 的 JSON 載入器。
+///
+/// 實作 [`JsonLoader`]，搭配 [`InterestRateInstrumentSupports`] 使用。
+///
+/// # 使用方式
+/// ```rust
+/// let mut builder: ManagerBuilder<DepositGenerator> = ManagerBuilder::new();
+/// DepositGeneratorLoader
+///     .load_from_reader(&mut builder, "deposits.json", &(market, cal, sched, dcg, idx))?;
+/// let frozen: FrozenManager<DepositGenerator> = builder.build();
+/// ```
+pub struct DepositGeneratorLoader;
+
+impl<'a> JsonLoader<DepositGenerator, InterestRateInstrumentSupports<'a>> for DepositGeneratorLoader {
+    fn insert_obj_from_json(
+        &self,
+        builder: &mut ManagerBuilder<DepositGenerator>,
+        json_value: serde_json::Value,
+        supports: &InterestRateInstrumentSupports<'a>,
+    ) -> Result<(), ManagerError> {
+        let named: NamedJsonObject = parse_json_value(json_value.clone())?;
+        let prop:  DepositGeneratorJsonProp = parse_json_value(json_value)?;
+
+        let market    = supports.0.get(&prop.market)?;
+        let leg_chars = build_leg_characters_generator(prop.leg, supports)?;
+
+        let generator = DepositGenerator::new(market, leg_chars, prop.nominal);
+        builder.insert(named.name().to_owned(), Arc::new(generator));
+        Ok(())
+    }
 }

@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use crate::manager::manager::{
     FrozenManager,
-    IManager,
+    JsonLoader,
     ManagerBuilder,
 };
 use crate::manager::managererror::ManagerError;
