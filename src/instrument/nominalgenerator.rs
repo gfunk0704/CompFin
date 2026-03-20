@@ -1,7 +1,11 @@
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
+
+use serde::Deserialize;
 
 use crate::interestrate::compounding::Compounding;
-use crate::time::daycounter::daycounter::DayCounter;
+use crate::manager::manager::FrozenManager;
+use crate::manager::managererror::ManagerError;
+use crate::time::daycounter::daycounter::{DayCounter, DayCounterGenerator};
 use crate::time::schedule::schedule::Schedule;
 
 
@@ -117,5 +121,74 @@ impl NominalGenerator for AccretingNominalGenerator {
         }
 
         nominals
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NominalGeneratorJsonProp / build_nominal_generator
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// 放在此模組的理由：
+//   NominalGenerator 的 JSON 解析只依賴 DayCounterGenerator，
+//   與利率商品、leg、market 等上層概念完全無關。
+//   簽名直接反映真實依賴，Bond 等其他商品可以直接引用，
+//   不需要帶入利率商品專屬的 supports 結構。
+//
+// JSON 範例（固定名目本金）：
+//   { "type": "Fixed", "initial_nominal": 100000000.0 }
+//
+// JSON 範例（遞增名目本金）：
+//   {
+//     "type": "Accreting",
+//     "initial_nominal": 100000000.0,
+//     "rate": 0.03,
+//     "day_counter_generator": "ACT365",
+//     "compounding": "Annual"
+//   }
+
+/// 名目本金產生器的內嵌 JSON 定義。
+///
+/// 以 `type` 欄位區分，對應到 [`FixedNominalGenerator`] 或 [`AccretingNominalGenerator`]。
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+pub enum NominalGeneratorJsonProp {
+    /// 固定名目本金：每個 schedule period 的本金均相同。
+    Fixed {
+        initial_nominal: f64,
+    },
+    /// 遞增（複利累積）名目本金：本金隨每個 period 依利率複利成長。
+    ///
+    /// `day_counter_generator` 從呼叫端傳入的 `FrozenManager<DayCounterGenerator>` 查找。
+    Accreting {
+        initial_nominal: f64,
+        rate: f64,
+        day_counter_generator: String,
+        compounding: Compounding,
+    },
+}
+
+/// [`NominalGeneratorJsonProp`] 轉換為 `Arc<dyn NominalGenerator>`。
+///
+/// 簽名只取真正需要的 `dcg_manager`，不依賴任何上層的 supports 結構，
+/// 讓 Bond 等非利率商品也能直接呼叫。
+pub fn build_nominal_generator(
+    prop: NominalGeneratorJsonProp,
+    dcg_manager: &FrozenManager<DayCounterGenerator>,
+) -> Result<Arc<dyn NominalGenerator>, ManagerError> {
+    match prop {
+        NominalGeneratorJsonProp::Fixed { initial_nominal } => {
+            let nominal_gen = FixedNominalGenerator::new();
+            nominal_gen.setter().set_initial_nominal(initial_nominal);
+            Ok(Arc::new(nominal_gen))
+        }
+        NominalGeneratorJsonProp::Accreting { initial_nominal, rate, day_counter_generator, compounding } => {
+            let dcg         = dcg_manager.get(&day_counter_generator)?;
+            // generate(None)：AccretingNominalGenerator 不依賴具體 schedule，可用預設參數
+            let day_counter = dcg.generate(None)?;
+            let nominal_gen = AccretingNominalGenerator::new(day_counter, compounding);
+            nominal_gen.setter().set_initial_nominal(initial_nominal);
+            nominal_gen.setter().set_rate(rate);
+            Ok(Arc::new(nominal_gen))
+        }
     }
 }

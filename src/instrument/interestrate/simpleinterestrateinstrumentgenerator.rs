@@ -61,7 +61,7 @@ pub trait SimpleInterestRateInstrumentGenerator {
 //         — schedule 產生器查找（leg 定義中的 schedule_generator）
 //   .3  FrozenManager<DayCounterGenerator>
 //         — day counter 產生器查找（leg 定義中的 day_counter_generator；
-//           IRS 的 AccretingNominalGenerator 也用此欄位）
+//           build_nominal_generator 呼叫端需自行取出 supports.3 傳入）
 //   .4  FrozenManager<dyn InterestRateIndex + Send + Sync>
 //         — floating leg 的 index 查找（leg 定義中的 "index"，僅 Floating 型別使用）
 

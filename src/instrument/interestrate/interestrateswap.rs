@@ -19,11 +19,10 @@ use crate::instrument::interestrate::simpleinterestrateinstrumentgenerator::{
 };
 use crate::instrument::leg::legcharacters::{LegCharacters, LegCharactersGenerator};
 use crate::instrument::nominalgenerator::{
-    AccretingNominalGenerator,
-    FixedNominalGenerator,
+    build_nominal_generator,
     NominalGenerator,
+    NominalGeneratorJsonProp,
 };
-use crate::interestrate::compounding::Compounding;
 use crate::manager::manager::{JsonLoader, ManagerBuilder};
 use crate::manager::managererror::{ManagerError, parse_json_value};
 use crate::manager::namedobject::NamedJsonObject;
@@ -422,12 +421,8 @@ impl SimpleInterestRateInstrumentGenerator for InterestRateSwapGenerator {
 // 設計說明：
 //   Pay / receive 兩條腿直接以 LegJsonProp 內嵌在 JSON 中，
 //   閱讀一份 JSON 就能理解整筆 IRS 的完整結構。
-//
-//   NominalGenerator 同樣以 #[serde(tag = "type")] 的方式內嵌：
-//     - "Fixed"    → FixedNominalGenerator（每期本金相同）
-//     - "Accreting"→ AccretingNominalGenerator（本金按複利遞增）
-//   AccretingNominalGenerator 需要的 DayCounterGenerator 從
-//   InterestRateInstrumentSupports.3 查找，不增加額外的 supports 欄位。
+//   NominalGeneratorJsonProp / build_nominal_generator 定義於
+//   simpleinterestrateinstrumentgenerator，Bond 等其他產品亦可共用。
 //
 // JSON 範例（固定 vs. 浮動，固定名目本金）：
 //   {
@@ -463,27 +458,6 @@ impl SimpleInterestRateInstrumentGenerator for InterestRateSwapGenerator {
 //     "compounding": "Annual"
 //   }
 
-/// 名目本金產生器的內嵌 JSON 定義。
-///
-/// 以 `type` 欄位區分，對應到 [`FixedNominalGenerator`] 或 [`AccretingNominalGenerator`]。
-#[derive(Deserialize)]
-#[serde(tag = "type")]
-enum NominalGeneratorJsonProp {
-    /// 固定名目本金：每個 schedule period 的本金均相同。
-    Fixed {
-        initial_nominal: f64,
-    },
-    /// 遞增（複利累積）名目本金：本金隨每個 period 依利率複利成長。
-    ///
-    /// `day_counter_generator` 從 `InterestRateInstrumentSupports.3` 查找。
-    Accreting {
-        initial_nominal: f64,
-        rate: f64,
-        day_counter_generator: String,
-        compounding: Compounding,
-    },
-}
-
 #[derive(Deserialize)]
 struct InterestRateSwapGeneratorJsonProp {
     market:               String,
@@ -491,32 +465,6 @@ struct InterestRateSwapGeneratorJsonProp {
     pay_leg_nominal:      NominalGeneratorJsonProp,
     receive_leg:          LegJsonProp,
     receive_leg_nominal:  NominalGeneratorJsonProp,
-}
-
-/// [`NominalGeneratorJsonProp`] 轉換為 `Arc<dyn NominalGenerator>`。
-///
-/// `Accreting` 型別的 DayCounterGenerator 從 `InterestRateInstrumentSupports.3` 查找，
-/// 避免為此增加獨立的 supports 欄位。
-fn build_nominal_generator(
-    prop: NominalGeneratorJsonProp,
-    supports: &InterestRateInstrumentSupports,
-) -> Result<Arc<dyn NominalGenerator>, ManagerError> {
-    match prop {
-        NominalGeneratorJsonProp::Fixed { initial_nominal } => {
-            let gen = FixedNominalGenerator::new();
-            gen.setter().set_initial_nominal(initial_nominal);
-            Ok(Arc::new(gen))
-        }
-        NominalGeneratorJsonProp::Accreting { initial_nominal, rate, day_counter_generator, compounding } => {
-            let dcg = supports.3.get(&day_counter_generator)?;
-            // generate(None)：AccretingNominalGenerator 不依賴具體 schedule，可用預設參數
-            let day_counter = dcg.generate(None)?;
-            let gen = AccretingNominalGenerator::new(day_counter, compounding);
-            gen.setter().set_initial_nominal(initial_nominal);
-            gen.setter().set_rate(rate);
-            Ok(Arc::new(gen))
-        }
-    }
 }
 
 /// [`InterestRateSwapGenerator`] 的 JSON 載入器。
@@ -547,8 +495,8 @@ impl<'a> JsonLoader<InterestRateSwapGenerator, InterestRateInstrumentSupports<'a
         let market       = supports.0.get(&prop.market)?;
         let pay_leg      = build_leg_characters_generator(prop.pay_leg,     supports)?;
         let receive_leg  = build_leg_characters_generator(prop.receive_leg, supports)?;
-        let pay_nominal  = build_nominal_generator(prop.pay_leg_nominal,    supports)?;
-        let recv_nominal = build_nominal_generator(prop.receive_leg_nominal, supports)?;
+        let pay_nominal  = build_nominal_generator(prop.pay_leg_nominal,     supports.3)?;
+        let recv_nominal = build_nominal_generator(prop.receive_leg_nominal,  supports.3)?;
 
         let generator = InterestRateSwapGenerator::new(
             market, pay_leg, pay_nominal, receive_leg, recv_nominal,
