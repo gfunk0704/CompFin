@@ -13,6 +13,7 @@ pub mod instrument {
 
     pub mod leg {
         pub mod legcharacters;
+        pub mod legcharactersgeneratorloader;
         pub mod fixedratelegcharacters;
         pub mod floatingratelegcharacters;
 

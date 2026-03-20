@@ -17,13 +17,13 @@ use crate::instrument::instrument::{
     InstrumentWithLinearFlows, 
     Position, SimpleInstrument
 };
-use crate::instrument::interestrate::simpleinterestrateinstrumentgenerator::{
+use crate::instrument::interestrate::simpleinterestrateinstrumentgenerator::SimpleInterestRateInstrumentGenerator;
+use crate::instrument::leg::legcharacters::{LegCharacters, LegCharactersGenerator};
+use crate::instrument::leg::legcharactersgeneratorloader::{
     build_leg_characters_generator,
     InterestRateInstrumentSupports,
     LegJsonProp,
-    SimpleInterestRateInstrumentGenerator,
 };
-use crate::instrument::leg::legcharacters::{LegCharacters, LegCharactersGenerator};
 use crate::manager::manager::{JsonLoader, ManagerBuilder};
 use crate::manager::managererror::{ManagerError, parse_json_value};
 use crate::manager::namedobject::NamedJsonObject;
@@ -370,9 +370,15 @@ impl SimpleInterestRateInstrumentGenerator for DepositGenerator {
 //     }
 //   }
 
+fn default_nominal() -> f64 {
+    1_000_000.0
+}
+
 #[derive(Deserialize)]
 struct DepositGeneratorJsonProp {
     market:  String,
+    /// 省略時預設 1_000_000.0（對應 [`NominalSetter`] 的慣例預設值）。
+    #[serde(default = "default_nominal")]
     nominal: f64,
     /// Leg 定義直接內嵌，不透過獨立的 leg manager 查找。
     leg:     LegJsonProp,

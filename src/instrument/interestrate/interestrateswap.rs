@@ -11,13 +11,13 @@ use crate::instrument::instrument::{
     Position, SimpleInstrument,
 };
 use crate::instrument::interestrate::flowobserver::FlowObserver;
-use crate::instrument::interestrate::simpleinterestrateinstrumentgenerator::{
+use crate::instrument::interestrate::simpleinterestrateinstrumentgenerator::SimpleInterestRateInstrumentGenerator;
+use crate::instrument::leg::legcharacters::{LegCharacters, LegCharactersGenerator};
+use crate::instrument::leg::legcharactersgeneratorloader::{
     build_leg_characters_generator,
     InterestRateInstrumentSupports,
     LegJsonProp,
-    SimpleInterestRateInstrumentGenerator,
 };
-use crate::instrument::leg::legcharacters::{LegCharacters, LegCharactersGenerator};
 use crate::instrument::nominalgenerator::{
     build_nominal_generator,
     NominalGenerator,

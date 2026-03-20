@@ -146,25 +146,43 @@ impl NominalGenerator for AccretingNominalGenerator {
 //     "compounding": "Annual"
 //   }
 
+#[derive(Deserialize)]
+struct FixedNominalJsonProp {
+    #[serde(default = "default_initial_nominal")]
+    initial_nominal: f64,
+}
+
+#[derive(Deserialize)]
+struct AccretingNominalJsonProp {
+    #[serde(default = "default_initial_nominal")]
+    initial_nominal: f64,
+    #[serde(default)]
+    rate: f64,
+    day_counter_generator: String,
+    compounding: Compounding,
+}
+
+fn default_initial_nominal() -> f64 {
+    1_000_000.0
+}
+
 /// 名目本金產生器的內嵌 JSON 定義。
 ///
 /// 以 `type` 欄位區分，對應到 [`FixedNominalGenerator`] 或 [`AccretingNominalGenerator`]。
+///
+/// # 欄位預設值
+/// - `initial_nominal`：省略時預設 1_000_000.0（對應 [`NominalSetter`] 的預設值）
+/// - `rate`（僅 `Accreting`）：省略時預設 0.0（對應 [`NominalSetter`] 的預設值）
+///
+/// # 注意
+/// serde 的 `#[serde(tag = "...")]` 內部標記 enum 不支援 variant 欄位層級的 `#[serde(default)]`，
+/// 因此各 variant 拆成獨立的 inner struct，讓 `#[serde(default)]` 作用在 struct 欄位上。
+/// JSON 格式不變，`{"type": "Fixed"}` 與 `{"type": "Fixed", "initial_nominal": 500000}` 均合法。
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 pub enum NominalGeneratorJsonProp {
-    /// 固定名目本金：每個 schedule period 的本金均相同。
-    Fixed {
-        initial_nominal: f64,
-    },
-    /// 遞增（複利累積）名目本金：本金隨每個 period 依利率複利成長。
-    ///
-    /// `day_counter_generator` 從呼叫端傳入的 `FrozenManager<DayCounterGenerator>` 查找。
-    Accreting {
-        initial_nominal: f64,
-        rate: f64,
-        day_counter_generator: String,
-        compounding: Compounding,
-    },
+    Fixed(FixedNominalJsonProp),
+    Accreting(AccretingNominalJsonProp),
 }
 
 /// [`NominalGeneratorJsonProp`] 轉換為 `Arc<dyn NominalGenerator>`。
@@ -176,18 +194,18 @@ pub fn build_nominal_generator(
     dcg_manager: &FrozenManager<DayCounterGenerator>,
 ) -> Result<Arc<dyn NominalGenerator>, ManagerError> {
     match prop {
-        NominalGeneratorJsonProp::Fixed { initial_nominal } => {
+        NominalGeneratorJsonProp::Fixed(p) => {
             let nominal_gen = FixedNominalGenerator::new();
-            nominal_gen.setter().set_initial_nominal(initial_nominal);
+            nominal_gen.setter().set_initial_nominal(p.initial_nominal);
             Ok(Arc::new(nominal_gen))
         }
-        NominalGeneratorJsonProp::Accreting { initial_nominal, rate, day_counter_generator, compounding } => {
-            let dcg         = dcg_manager.get(&day_counter_generator)?;
+        NominalGeneratorJsonProp::Accreting(p) => {
+            let dcg         = dcg_manager.get(&p.day_counter_generator)?;
             // generate(None)：AccretingNominalGenerator 不依賴具體 schedule，可用預設參數
             let day_counter = dcg.generate(None)?;
-            let nominal_gen = AccretingNominalGenerator::new(day_counter, compounding);
-            nominal_gen.setter().set_initial_nominal(initial_nominal);
-            nominal_gen.setter().set_rate(rate);
+            let nominal_gen = AccretingNominalGenerator::new(day_counter, p.compounding);
+            nominal_gen.setter().set_initial_nominal(p.initial_nominal);
+            nominal_gen.setter().set_rate(p.rate);
             Ok(Arc::new(nominal_gen))
         }
     }
