@@ -13,7 +13,7 @@ use crate::interestrate::index::interestrateindex::{InterestRateIndex, InterestR
 use crate::interestrate::index::termrateindex::TermRateIndex;
 use crate::manager::manager::{JsonLoader, ManagerBuilder, FrozenManager};
 use crate::manager::managererror::{ManagerError, parse_json_value};
-use crate::manager::namedobject::NamedJsonObject;
+use crate::manager::namedobject::Named;
 use crate::time::businessdayadjuster::BusinessDayAdjuster;
 use crate::time::calendar::holidaycalendar::HolidayCalendar;
 use crate::time::daycounter::daycounter::DayCounterGenerator;
@@ -187,10 +187,10 @@ impl<'a> JsonLoader<
         json_value: serde_json::Value,
         supports: &Supports,
     ) -> Result<(), ManagerError> {
-        let named: NamedJsonObject =
+        let named: Named<InterestRateIndexJsonProp> =
             parse_json_value(json_value.clone())?;
         let index = build_index_from_json(json_value, supports)?;
-        builder.insert(named.name().to_owned(), index);
+        builder.insert(named.name, index);
         Ok(())
     }
 }

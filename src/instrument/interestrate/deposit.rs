@@ -26,7 +26,7 @@ use crate::instrument::leg::legcharactersgeneratorloader::{
 };
 use crate::manager::manager::{JsonLoader, ManagerBuilder};
 use crate::manager::managererror::{ManagerError, parse_json_value};
-use crate::manager::namedobject::NamedJsonObject;
+use crate::manager::namedobject::Named;
 use crate::market::market::Market;
 use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::pricingcondition::PricingCondition;
@@ -404,14 +404,13 @@ impl<'a> JsonLoader<DepositGenerator, InterestRateInstrumentSupports<'a>> for De
         json_value: serde_json::Value,
         supports: &InterestRateInstrumentSupports<'a>,
     ) -> Result<(), ManagerError> {
-        let named: NamedJsonObject = parse_json_value(json_value.clone())?;
-        let prop:  DepositGeneratorJsonProp = parse_json_value(json_value)?;
+        let named: Named<DepositGeneratorJsonProp> = parse_json_value(json_value)?;
 
-        let market    = supports.0.get(&prop.market)?;
-        let leg_chars = build_leg_characters_generator(prop.leg, supports)?;
+        let market    = supports.0.get(&named.inner.market)?;
+        let leg_chars = build_leg_characters_generator(named.inner.leg, supports)?;
 
-        let generator = DepositGenerator::new(market, leg_chars, prop.nominal);
-        builder.insert(named.name().to_owned(), Arc::new(generator));
+        let generator = DepositGenerator::new(market, leg_chars, named.inner.nominal);
+        builder.insert(named.name, Arc::new(generator));
         Ok(())
     }
 }

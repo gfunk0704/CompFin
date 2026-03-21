@@ -25,7 +25,7 @@ use crate::instrument::nominalgenerator::{
 };
 use crate::manager::manager::{JsonLoader, ManagerBuilder};
 use crate::manager::managererror::{ManagerError, parse_json_value};
-use crate::manager::namedobject::NamedJsonObject;
+use crate::manager::namedobject::Named;
 use crate::market::market::Market;
 use crate::model::interestrate::interestratecurve::InterestRateCurve;
 use crate::pricingcondition::PricingCondition;
@@ -489,19 +489,19 @@ impl<'a> JsonLoader<InterestRateSwapGenerator, InterestRateInstrumentSupports<'a
         json_value: serde_json::Value,
         supports: &InterestRateInstrumentSupports<'a>,
     ) -> Result<(), ManagerError> {
-        let named: NamedJsonObject = parse_json_value(json_value.clone())?;
-        let prop:  InterestRateSwapGeneratorJsonProp = parse_json_value(json_value)?;
+        let named: Named<InterestRateSwapGeneratorJsonProp> = parse_json_value(json_value)?;
+        let p = named.inner;
 
-        let market       = supports.0.get(&prop.market)?;
-        let pay_leg      = build_leg_characters_generator(prop.pay_leg,     supports)?;
-        let receive_leg  = build_leg_characters_generator(prop.receive_leg, supports)?;
-        let pay_nominal  = build_nominal_generator(prop.pay_leg_nominal,     supports.3)?;
-        let recv_nominal = build_nominal_generator(prop.receive_leg_nominal,  supports.3)?;
+        let market       = supports.0.get(&p.market)?;
+        let pay_leg      = build_leg_characters_generator(p.pay_leg,      supports)?;
+        let receive_leg  = build_leg_characters_generator(p.receive_leg,  supports)?;
+        let pay_nominal  = build_nominal_generator(p.pay_leg_nominal,     supports.3)?;
+        let recv_nominal = build_nominal_generator(p.receive_leg_nominal, supports.3)?;
 
         let generator = InterestRateSwapGenerator::new(
             market, pay_leg, pay_nominal, receive_leg, recv_nominal,
         );
-        builder.insert(named.name().to_owned(), Arc::new(generator));
+        builder.insert(named.name, Arc::new(generator));
         Ok(())
     }
 }

@@ -1,5 +1,4 @@
-use ndarray::{Array1, Array2};
-use ndarray_linalg::Solve;
+use nalgebra::{DMatrix, DVector};
 
 use crate::math::curve::curve::{
     Curve, 
@@ -156,14 +155,14 @@ fn cubic_coefs_from_hermite(points: &[Point2D], h: &[f64], t: &[f64]) -> Vec<Vec
 // CubicSpline（Natural / Financial / Clamped / NotAKnot）
 // ─────────────────────────────────────────────
 
-fn build_interior_system(points: &[Point2D], h: &[f64]) -> (Array2<f64>, Array1<f64>) {
+fn build_interior_system(points: &[Point2D], h: &[f64]) -> (DMatrix<f64>, DVector<f64>) {
     let n = h.len();
-    let mut mat = Array2::<f64>::zeros((n + 1, n + 1));
-    let mut rhs = Array1::<f64>::zeros(n + 1);
+    let mut mat = DMatrix::<f64>::zeros(n + 1, n + 1);
+    let mut rhs = DVector::<f64>::zeros(n + 1);
     for i in 1..n {
-        mat[[i, i - 1]] = h[i - 1];
-        mat[[i, i]]     = 2.0 * (h[i - 1] + h[i]);
-        mat[[i, i + 1]] = h[i];
+        mat[(i, i - 1)] = h[i - 1];
+        mat[(i, i)]     = 2.0 * (h[i - 1] + h[i]);
+        mat[(i, i + 1)] = h[i];
         rhs[i] = 6.0 * (
             (points[i + 1].y() - points[i].y()) / h[i]
           - (points[i].y()     - points[i - 1].y()) / h[i - 1]
@@ -176,22 +175,22 @@ fn generate_natural_cubic_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
     let n = points.len() - 1;
     let h: Vec<f64> = (0..n).map(|i| points[i + 1].x() - points[i].x()).collect();
     let (mut mat, rhs) = build_interior_system(points, &h);
-    mat[[0, 0]] = 1.0;
-    mat[[n, n]] = 1.0;
-    let m = mat.solve_into(rhs).expect("NaturalCubic: 線性方程組求解失敗");
-    cubic_coefs_from_moments(points, &h, m.as_slice().unwrap())
+    mat[(0, 0)] = 1.0;
+    mat[(n, n)] = 1.0;
+    let m = mat.lu().solve(&rhs).expect("NaturalCubic: 線性方程組求解失敗");
+    cubic_coefs_from_moments(points, &h, m.as_slice())
 }
 
 fn generate_financial_cubic_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
     let n = points.len() - 1;
     let h: Vec<f64> = (0..n).map(|i| points[i + 1].x() - points[i].x()).collect();
     let (mut mat, mut rhs) = build_interior_system(points, &h);
-    mat[[0, 0]] = 1.0;
-    mat[[n, n - 1]] = 1.0;
-    mat[[n, n]]     = 2.0;
+    mat[(0, 0)] = 1.0;
+    mat[(n, n - 1)] = 1.0;
+    mat[(n, n)]     = 2.0;
     rhs[n] = -6.0 * (points[n].y() - points[n - 1].y()) / (h[n - 1] * h[n - 1]);
-    let m = mat.solve_into(rhs).expect("FinancialCubic: 線性方程組求解失敗");
-    cubic_coefs_from_moments(points, &h, m.as_slice().unwrap())
+    let m = mat.lu().solve(&rhs).expect("FinancialCubic: 線性方程組求解失敗");
+    cubic_coefs_from_moments(points, &h, m.as_slice())
 }
 
 fn generate_clamped_cubic_coef_list(
@@ -202,28 +201,28 @@ fn generate_clamped_cubic_coef_list(
     let n = points.len() - 1;
     let h: Vec<f64> = (0..n).map(|i| points[i + 1].x() - points[i].x()).collect();
     let (mut mat, mut rhs) = build_interior_system(points, &h);
-    mat[[0, 0]] = 2.0 * h[0];
-    mat[[0, 1]] = h[0];
+    mat[(0, 0)] = 2.0 * h[0];
+    mat[(0, 1)] = h[0];
     rhs[0] = 6.0 * ((points[1].y() - points[0].y()) / h[0] - deriv_left);
-    mat[[n, n - 1]] = h[n - 1];
-    mat[[n, n]]     = 2.0 * h[n - 1];
+    mat[(n, n - 1)] = h[n - 1];
+    mat[(n, n)]     = 2.0 * h[n - 1];
     rhs[n] = 6.0 * (deriv_right - (points[n].y() - points[n - 1].y()) / h[n - 1]);
-    let m = mat.solve_into(rhs).expect("ClampedCubic: 線性方程組求解失敗");
-    cubic_coefs_from_moments(points, &h, m.as_slice().unwrap())
+    let m = mat.lu().solve(&rhs).expect("ClampedCubic: 線性方程組求解失敗");
+    cubic_coefs_from_moments(points, &h, m.as_slice())
 }
 
 fn generate_not_a_knot_cubic_coef_list(points: &[Point2D]) -> Vec<Vec<f64>> {
     let n = points.len() - 1;
     let h: Vec<f64> = (0..n).map(|i| points[i + 1].x() - points[i].x()).collect();
     let (mut mat, rhs) = build_interior_system(points, &h);
-    mat[[0, 0]] =  -h[1];
-    mat[[0, 1]] =   h[0] + h[1];
-    mat[[0, 2]] =  -h[0];
-    mat[[n, n - 2]] = -h[n - 1];
-    mat[[n, n - 1]] =  h[n - 2] + h[n - 1];
-    mat[[n, n]]     = -h[n - 2];
-    let m = mat.solve_into(rhs).expect("NotAKnotCubic: 線性方程組求解失敗");
-    cubic_coefs_from_moments(points, &h, m.as_slice().unwrap())
+    mat[(0, 0)] =  -h[1];
+    mat[(0, 1)] =   h[0] + h[1];
+    mat[(0, 2)] =  -h[0];
+    mat[(n, n - 2)] = -h[n - 1];
+    mat[(n, n - 1)] =  h[n - 2] + h[n - 1];
+    mat[(n, n)]     = -h[n - 2];
+    let m = mat.lu().solve(&rhs).expect("NotAKnotCubic: 線性方程組求解失敗");
+    cubic_coefs_from_moments(points, &h, m.as_slice())
 }
 
 // ─────────────────────────────────────────────

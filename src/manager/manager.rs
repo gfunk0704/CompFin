@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde_json;
 
 use crate::manager::managererror::{ManagerError, parse_json_value};
-use crate::manager::namedobject::NamedJsonObject;
+use crate::manager::namedobject::Named;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 設計說明
@@ -312,10 +312,9 @@ impl<V: Send + Sync + 'static> JsonLoader<V, ()> for SimpleLoader<V> {
         json_value: serde_json::Value,
         _supports: &(),
     ) -> Result<(), ManagerError> {
-        let named: NamedJsonObject =
-            parse_json_value(json_value.clone())?;
+        let named: Named<serde_json::Value> = parse_json_value(json_value.clone())?;
         let v = (self.factory)(json_value)?;
-        builder.insert(named.name().to_owned(), v);
+        builder.insert(named.name, v);
         Ok(())
     }
 }

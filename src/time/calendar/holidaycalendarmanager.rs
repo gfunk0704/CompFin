@@ -7,7 +7,7 @@ use serde_json;
 
 use crate::manager::manager::{JsonLoader, ManagerBuilder};
 use crate::manager::managererror::{ManagerError, parse_json_value};
-use crate::manager::namedobject::NamedJsonObject;
+use crate::manager::namedobject::Named;
 use crate::time::calendar::holidaycalendar::HolidayCalendar;
 use crate::time::calendar::jointcalendar::JointCalendar;
 use crate::time::calendar::precomputedsimplecalendar::PrecomputedSimpleCalendar;
@@ -216,15 +216,13 @@ impl JsonLoader<dyn HolidayCalendar + Send + Sync, ()> for HolidayCalendarLoader
         json_value: serde_json::Value,
         _supports: &(),
     ) -> Result<(), ManagerError> {
-        let named_obj: NamedJsonObject =
-            parse_json_value(json_value.clone())?;
-        let calendar_typed_object: CalendarTypedObject =
+        let named: Named<CalendarTypedObject> =
             parse_json_value(json_value.clone())?;
 
-        match calendar_typed_object.calendar_type {
+        match named.inner.calendar_type {
             CalendarType::SimpleCalendar => {
                 let calendar = get_simple_calendar_from_json(json_value)?;
-                builder.insert(named_obj.name().to_owned(), calendar);
+                builder.insert(named.name, calendar);
                 Ok(())
             },
             CalendarType::JointCalendar => {
@@ -240,7 +238,7 @@ impl JsonLoader<dyn HolidayCalendar + Send + Sync, ()> for HolidayCalendarLoader
                     MethodOfJoint::Intersection => JointCalendar::intersection(c1, c2),
                     MethodOfJoint::Union        => JointCalendar::union(c1, c2),
                 };
-                builder.insert(named_obj.name().to_owned(), Arc::new(joint_calendar));
+                builder.insert(named.name, Arc::new(joint_calendar));
                 Ok(())
             }
         }
