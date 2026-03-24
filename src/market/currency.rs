@@ -1,5 +1,5 @@
 
-#[derive(Clone)]
+#[derive(Clone, serde::Deserialize)]
 pub struct Currency {
     code: String,
     digits: u32

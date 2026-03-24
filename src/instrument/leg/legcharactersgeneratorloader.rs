@@ -167,7 +167,7 @@ pub fn build_leg_characters_generator(
             let sched   = supports.2.get(&p.schedule_generator)?;
             let dcg     = supports.3.get(&p.day_counter_generator)?;
 
-            let mut setter = LegCharactersSetter::new();
+            let setter = LegCharactersSetter::new();
             setter.set_fixed_rate(p.rate);
 
             Ok(Arc::new(FixedRateLegCharactersGenerator::new(
@@ -183,7 +183,7 @@ pub fn build_leg_characters_generator(
             let dcg     = supports.3.get(&p.day_counter_generator)?;
             let idx     = supports.4.get(&p.index)?;
 
-            let mut setter = LegCharactersSetter::new();
+            let setter = LegCharactersSetter::new();
             setter.set_spread(p.spread);
             setter.set_leverage(p.leverage);
 

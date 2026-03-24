@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use chrono::NaiveDate;
 
@@ -67,25 +67,35 @@ pub trait LegCharacters: Send + Sync {
 // LegCharactersSetter
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LegCharactersSetter
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// 使用 RwLock 做內部可變性，與 NominalSetter 的設計一致。
+
 pub struct LegCharactersSetter {
-    fixed_rate: f64,
-    spread: f64,
-    leverage: f64,
+    fixed_rate: RwLock<f64>,
+    spread:     RwLock<f64>,
+    leverage:   RwLock<f64>,
 }
 
 impl LegCharactersSetter {
     pub fn new() -> Self {
-        Self { fixed_rate: 0.0, spread: 0.0, leverage: 1.0 }
+        Self {
+            fixed_rate: RwLock::new(0.0),
+            spread:     RwLock::new(0.0),
+            leverage:   RwLock::new(1.0),
+        }
     }
 
-    pub fn fixed_rate(&self) -> f64 { self.fixed_rate }
-    pub fn set_fixed_rate(&mut self, v: f64) { self.fixed_rate = v; }
+    pub fn fixed_rate(&self) -> f64 { *self.fixed_rate.read().unwrap() }
+    pub fn set_fixed_rate(&self, v: f64) { *self.fixed_rate.write().unwrap() = v; }
 
-    pub fn spread(&self) -> f64 { self.spread }
-    pub fn set_spread(&mut self, v: f64) { self.spread = v; }
+    pub fn spread(&self) -> f64 { *self.spread.read().unwrap() }
+    pub fn set_spread(&self, v: f64) { *self.spread.write().unwrap() = v; }
 
-    pub fn leverage(&self) -> f64 { self.leverage }
-    pub fn set_leverage(&mut self, v: f64) { self.leverage = v; }
+    pub fn leverage(&self) -> f64 { *self.leverage.read().unwrap() }
+    pub fn set_leverage(&self, v: f64) { *self.leverage.write().unwrap() = v; }
 }
 
 impl Default for LegCharactersSetter {

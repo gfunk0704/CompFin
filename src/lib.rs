@@ -52,11 +52,8 @@ pub mod market {
 }
 
 pub mod marketdata {
-    pub mod quote;
-
     pub mod interestrate {
-        pub mod marketratequote;
-        pub mod depositratequote;
+        pub mod marketratesheet;
     }
 }
 
@@ -70,6 +67,7 @@ pub mod math {
         }
     }
     pub mod round;
+    pub mod rootsolver;
 }
 
 pub mod model {

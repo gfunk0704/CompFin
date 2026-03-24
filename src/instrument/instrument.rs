@@ -10,7 +10,7 @@ use crate::value::cashflows::CashFlows;
 use crate::market::market::Market;
 use crate::pricingcondition::PricingCondition;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
 pub enum Position {
     Buy = 1,
     Sell = -1
