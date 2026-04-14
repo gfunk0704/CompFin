@@ -64,11 +64,7 @@ impl InterestRateSwap {
         // pay/receive各自的forward curve由各自的leg_characters提供（floating才有）
         let mut curve_name_map: HashMap<CurveFunction, String> = HashMap::new();
         curve_name_map.insert(
-            CurveFunction::PayDiscount,
-            profit_and_loss_market.discount_curve_name().to_string(),
-        );
-        curve_name_map.insert(
-            CurveFunction::ReceiveDiscount,
+            CurveFunction::ProfitAndLossDiscount,
             profit_and_loss_market.discount_curve_name().to_string(),
         );
         if let Some(name) = pay_leg_characters.reference_curve_name() {
@@ -182,6 +178,75 @@ impl InterestRateSwap {
 
         cash_flows
     }
+
+    /// projected flows 中 payment_date > cutoff 的部分。
+    ///
+    /// 與 `collect_projected_flows` 相同的 partition_point 邏輯，
+    /// 但起始位置取 max(horizon_pos, cutoff_pos)，
+    /// 確保 cutoff 之前的 `evaluate_flow` 完全不被呼叫。
+    fn collect_projected_flows_after_cutoff(
+        flow_observer_list:    &[FlowObserver],
+        cutoff:                NaiveDate,
+        forward_curve_opt:     Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition:     &PricingCondition,
+        flow_rounding_digits:  Option<u32>,
+        index_rounding_digits: Option<u32>,
+        sign:                  f64,
+    ) -> CashFlows {
+        let mut cash_flows = CashFlows::new();
+        let include_horizon = *pricing_condition.include_horizon_flow();
+        let horizon = *pricing_condition.horizon();
+
+        let cutoff_pos = flow_observer_list.partition_point(|fo| fo.payment_date() <= cutoff);
+        let horizon_pos = flow_observer_list.partition_point(|fo| {
+            if include_horizon { fo.payment_date() <= horizon } else { fo.payment_date() < horizon }
+        });
+        let start = cutoff_pos.max(horizon_pos);
+
+        for i in start..flow_observer_list.len() {
+            cash_flows[&flow_observer_list[i].payment_date()] +=
+                sign * flow_observer_list[i].projected_flow(
+                    forward_curve_opt,
+                    pricing_condition,
+                    flow_rounding_digits,
+                    index_rounding_digits,
+                );
+        }
+
+        cash_flows
+    }
+
+    /// projected flows 中 payment_date <= cutoff 的部分。
+    fn collect_projected_flows_before_equal_cutoff(
+        flow_observer_list:    &[FlowObserver],
+        cutoff:                NaiveDate,
+        forward_curve_opt:     Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition:     &PricingCondition,
+        flow_rounding_digits:  Option<u32>,
+        index_rounding_digits: Option<u32>,
+        sign:                  f64,
+    ) -> CashFlows {
+        let mut cash_flows = CashFlows::new();
+        let include_horizon = *pricing_condition.include_horizon_flow();
+        let horizon = *pricing_condition.horizon();
+
+        let horizon_pos = flow_observer_list.partition_point(|fo| {
+            if include_horizon { fo.payment_date() <= horizon } else { fo.payment_date() < horizon }
+        });
+        let cutoff_end = flow_observer_list.partition_point(|fo| fo.payment_date() <= cutoff);
+
+        for i in horizon_pos..cutoff_end {
+            cash_flows[&flow_observer_list[i].payment_date()] +=
+                sign * flow_observer_list[i].projected_flow(
+                    forward_curve_opt,
+                    pricing_condition,
+                    flow_rounding_digits,
+                    index_rounding_digits,
+                );
+        }
+
+        cash_flows
+    }
 }
 
 
@@ -210,7 +275,7 @@ impl Instrument for InterestRateSwap {
 
 
 impl InstrumentWithLinearFlows for InterestRateSwap {
-    fn past_pay_flows(&self, pricing_condition: PricingCondition) -> CashFlows {
+    fn past_pay_flows(&self, pricing_condition: &PricingCondition) -> CashFlows {
         let digits = self.profit_and_loss_market.settlement_currency().digits();
         Self::collect_past_flows(
             &self.pay_leg_flow_observer_list,
@@ -220,7 +285,7 @@ impl InstrumentWithLinearFlows for InterestRateSwap {
         )
     }
 
-    fn past_receive_flows(&self, pricing_condition: PricingCondition) -> CashFlows {
+    fn past_receive_flows(&self, pricing_condition: &PricingCondition) -> CashFlows {
         let digits = self.profit_and_loss_market.settlement_currency().digits();
         Self::collect_past_flows(
             &self.receive_leg_flow_observer_list,
@@ -232,8 +297,8 @@ impl InstrumentWithLinearFlows for InterestRateSwap {
 
     fn projected_pay_flows(
         &self,
-        forward_curve_opt: Option<Arc<dyn InterestRateCurve>>,
-        pricing_condition: PricingCondition,
+        forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
     ) -> CashFlows {
         let digits = self.profit_and_loss_market.settlement_currency().digits();
         let is_floating = forward_curve_opt.is_some();
@@ -250,7 +315,7 @@ impl InstrumentWithLinearFlows for InterestRateSwap {
 
         Self::collect_projected_flows(
             &self.pay_leg_flow_observer_list,
-            forward_curve_opt.as_ref(),
+            forward_curve_opt,
             &pricing_condition,
             flow_rounding,
             index_rounding,
@@ -260,8 +325,8 @@ impl InstrumentWithLinearFlows for InterestRateSwap {
 
     fn projected_receive_flows(
         &self,
-        forward_curve_opt: Option<Arc<dyn InterestRateCurve>>,
-        pricing_condition: PricingCondition,
+        forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
     ) -> CashFlows {
         let digits = self.profit_and_loss_market.settlement_currency().digits();
         let is_floating = forward_curve_opt.is_some();
@@ -278,8 +343,137 @@ impl InstrumentWithLinearFlows for InterestRateSwap {
 
         Self::collect_projected_flows(
             &self.receive_leg_flow_observer_list,
-            forward_curve_opt.as_ref(),
+            forward_curve_opt,
             &pricing_condition,
+            flow_rounding,
+            index_rounding,
+            1.0,
+        )
+    }
+
+    // ── partition_point 最佳化的 cutoff 方法 ─────────────────────────────────
+    //
+    // IRS 的 projected flows 結構：
+    //   pay:     pay_leg_flow_observer_list
+    //   receive: receive_leg_flow_observer_list
+    //
+    // 這些 override 在 FlowObserver 層直接用 partition_point 截斷，
+    // 避免計算 cutoff 之前的 evaluate_flow（特別是 CompoundingRateIndex）。
+
+    fn projected_pay_flows_after(
+        &self,
+        cutoff: NaiveDate,
+        forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
+    ) -> CashFlows {
+        let digits = self.profit_and_loss_market.settlement_currency().digits();
+        let is_floating = forward_curve_opt.is_some();
+        let flow_rounding = if is_floating {
+            pricing_condition.floating_flow_rounding_digits(digits)
+        } else {
+            pricing_condition.fixed_flow_rounding_digits(digits)
+        };
+        let index_rounding = if is_floating {
+            pricing_condition.floating_index_rounding_digits(digits)
+        } else {
+            None
+        };
+
+        Self::collect_projected_flows_after_cutoff(
+            &self.pay_leg_flow_observer_list,
+            cutoff,
+            forward_curve_opt,
+            pricing_condition,
+            flow_rounding,
+            index_rounding,
+            1.0,
+        )
+    }
+
+    fn projected_pay_flows_before_equal(
+        &self,
+        cutoff: NaiveDate,
+        forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
+    ) -> CashFlows {
+        let digits = self.profit_and_loss_market.settlement_currency().digits();
+        let is_floating = forward_curve_opt.is_some();
+        let flow_rounding = if is_floating {
+            pricing_condition.floating_flow_rounding_digits(digits)
+        } else {
+            pricing_condition.fixed_flow_rounding_digits(digits)
+        };
+        let index_rounding = if is_floating {
+            pricing_condition.floating_index_rounding_digits(digits)
+        } else {
+            None
+        };
+
+        Self::collect_projected_flows_before_equal_cutoff(
+            &self.pay_leg_flow_observer_list,
+            cutoff,
+            forward_curve_opt,
+            pricing_condition,
+            flow_rounding,
+            index_rounding,
+            1.0,
+        )
+    }
+
+    fn projected_receive_flows_after(
+        &self,
+        cutoff: NaiveDate,
+        forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
+    ) -> CashFlows {
+        let digits = self.profit_and_loss_market.settlement_currency().digits();
+        let is_floating = forward_curve_opt.is_some();
+        let flow_rounding = if is_floating {
+            pricing_condition.floating_flow_rounding_digits(digits)
+        } else {
+            pricing_condition.fixed_flow_rounding_digits(digits)
+        };
+        let index_rounding = if is_floating {
+            pricing_condition.floating_index_rounding_digits(digits)
+        } else {
+            None
+        };
+
+        Self::collect_projected_flows_after_cutoff(
+            &self.receive_leg_flow_observer_list,
+            cutoff,
+            forward_curve_opt,
+            pricing_condition,
+            flow_rounding,
+            index_rounding,
+            1.0,
+        )
+    }
+
+    fn projected_receive_flows_before_equal(
+        &self,
+        cutoff: NaiveDate,
+        forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
+    ) -> CashFlows {
+        let digits = self.profit_and_loss_market.settlement_currency().digits();
+        let is_floating = forward_curve_opt.is_some();
+        let flow_rounding = if is_floating {
+            pricing_condition.floating_flow_rounding_digits(digits)
+        } else {
+            pricing_condition.fixed_flow_rounding_digits(digits)
+        };
+        let index_rounding = if is_floating {
+            pricing_condition.floating_index_rounding_digits(digits)
+        } else {
+            None
+        };
+
+        Self::collect_projected_flows_before_equal_cutoff(
+            &self.receive_leg_flow_observer_list,
+            cutoff,
+            forward_curve_opt,
+            pricing_condition,
             flow_rounding,
             index_rounding,
             1.0,

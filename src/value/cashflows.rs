@@ -9,7 +9,7 @@ use std::ops::{
     Neg,
     Sub
 };
-use std::rc::Rc;
+use std::sync::Arc;
 
 use chrono::NaiveDate;
 
@@ -39,17 +39,17 @@ impl CashFlows {
     }
 
     pub fn npv(&self, 
-               discount_curve: &Rc<dyn InterestRateCurve>, 
+               discount_curve: &Arc<dyn InterestRateCurve>, 
                settlement_date_opt: Option<NaiveDate>) -> f64 {
-        
+        let discount_curve_core = discount_curve.to_discount_curve();
         // 1. 使用迭代器計算所有現金流的現值加總
         let mut total_npv: f64 = self.flows.iter()
-            .map(|(date, amount)| amount * discount_curve.discount(*date))
+            .map(|(date, amount)| amount * discount_curve_core.discount(*date))
             .sum();
         
         // 2. 處理結算日折現 (Settlement Date Discounting)
         if let Some(settlement_date) = settlement_date_opt {
-            let df = discount_curve.discount(settlement_date);
+            let df = discount_curve_core.discount(settlement_date);
             // 避免除以 0 的安全檢查 (雖然 DF 通常不為 0)
             assert!(df > 0.0, "Discount factor at settlement date must be positive. Check your curve!");
             total_npv /= df;
@@ -61,6 +61,20 @@ impl CashFlows {
     pub fn sum(&self) -> f64 {
         // values() 返回迭代器，sum() 是高度優化的消費函數
         self.flows.values().sum()
+    }
+
+    /// 原地保留所有 payment_date > cutoff 的 cash flow，移除其餘。
+    ///
+    /// 供 `InstrumentWithLinearFlows::projected_*_flows_after` 的 default 實作使用。
+    pub fn retain_after(&mut self, cutoff: NaiveDate) {
+        self.flows.retain(|&date, _| date > cutoff);
+    }
+
+    /// 原地保留所有 payment_date <= cutoff 的 cash flow，移除其餘。
+    ///
+    /// 供 `InstrumentWithLinearFlows::projected_*_flows_before_equal` 的 default 實作使用。
+    pub fn retain_before_equal(&mut self, cutoff: NaiveDate) {
+        self.flows.retain(|&date, _| date <= cutoff);
     }
 }
 

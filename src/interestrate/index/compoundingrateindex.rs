@@ -211,7 +211,8 @@ impl CompoundingRateIndex {
             } else {
                 end_date
             };
-            let rate = (forward_curve.discount(fixing) / forward_curve.discount(next_fixing) - 1.0) / tau;
+            let discount_curve = forward_curve.to_discount_curve();
+            let rate = (discount_curve.discount(fixing) / discount_curve.discount(next_fixing) - 1.0) / tau;
             acc * (1.0 + rate * tau)
         })
     }
@@ -224,7 +225,8 @@ impl CompoundingRateIndex {
         end: NaiveDate,
         forward_curve: &Arc<dyn InterestRateCurve>,
     ) -> f64 {
-        forward_curve.discount(start) / forward_curve.discount(end)
+        let discount_curve = forward_curve.to_discount_curve();
+        discount_curve.discount(start) / discount_curve.discount(end)
     }
 
     /// 混合 past/future 的逐日計算（固定用 Standard Forward 計算 future 部分）。
@@ -253,7 +255,8 @@ impl CompoundingRateIndex {
                 } else {
                     end_date
                 };
-                (forward_curve.discount(fixing_date) / forward_curve.discount(next_fixing) - 1.0) / tau
+                let discount_curve = forward_curve.to_discount_curve();
+                (discount_curve.discount(fixing_date) / discount_curve.discount(next_fixing) - 1.0) / tau
             };
 
             acc * (1.0 + rate * tau)

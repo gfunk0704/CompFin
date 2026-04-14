@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use chrono::NaiveDate;
 
-use crate::model::interestrate::interestratecurve::InterestRateCurve;
-use crate::time::daycounter::daycounter::DayCounter;
+use crate::model::interestrate::interestratecurve::DiscountCurve;
 
 /// Storage strategy for discount factor caching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,7 +68,7 @@ impl CacheStorage {
 }
 
 pub struct PrecomputedDiscountCurve {
-    reference_curve: Arc<dyn InterestRateCurve>,
+    reference_curve: Arc<dyn DiscountCurve>,
     storage: CacheStorage,
 }
 
@@ -109,7 +108,7 @@ impl PrecomputedDiscountCurve {
     /// );
     /// ```
     pub fn new(
-        reference_curve: Arc<dyn InterestRateCurve>,
+        reference_curve: Arc<dyn DiscountCurve>,
         dates: &[NaiveDate],
         strategy: CacheStrategy,
     ) -> Self {
@@ -130,7 +129,7 @@ impl PrecomputedDiscountCurve {
 
     /// Create storage with automatic strategy selection.
     fn create_auto_storage(
-        reference_curve: &Arc<dyn InterestRateCurve>,
+        reference_curve: &Arc<dyn DiscountCurve>,
         dates: &[NaiveDate],
     ) -> CacheStorage {
         if dates.is_empty() {
@@ -159,7 +158,7 @@ impl PrecomputedDiscountCurve {
 
     /// Create sparse (HashMap) storage.
     fn create_sparse_storage(
-        reference_curve: &Arc<dyn InterestRateCurve>,
+        reference_curve: &Arc<dyn DiscountCurve>,
         dates: &[NaiveDate],
     ) -> CacheStorage {
         let mut map = HashMap::with_capacity(dates.len());
@@ -173,7 +172,7 @@ impl PrecomputedDiscountCurve {
 
     /// Create dense (Vec) storage.
     fn create_dense_storage(
-        reference_curve: &Arc<dyn InterestRateCurve>,
+        reference_curve: &Arc<dyn DiscountCurve>,
         reference_date: NaiveDate,
         max_days: usize,
         dates: &[NaiveDate],
@@ -225,18 +224,14 @@ impl PrecomputedDiscountCurve {
         }
     }
 
-    pub fn reference_curve(&self) -> &Arc<dyn InterestRateCurve> {
+    pub fn reference_curve(&self) -> &Arc<dyn DiscountCurve> {
         &self.reference_curve
     }
 }
 
-impl InterestRateCurve for PrecomputedDiscountCurve {
-    fn day_counter(&self) -> Arc<DayCounter> {
-        self.reference_curve.day_counter()
-    }
-
-    fn reference_date(&self) -> NaiveDate {
-        self.reference_curve.reference_date()
+impl DiscountCurve for PrecomputedDiscountCurve {
+    fn year_fraction_calculator(&self) -> &super::interestratecurve::YearFractionCalculator {
+        self.reference_curve.year_fraction_calculator()
     }
 
     #[inline]

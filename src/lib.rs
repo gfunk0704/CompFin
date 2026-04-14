@@ -53,8 +53,9 @@ pub mod market {
 
 pub mod marketdata {
     pub mod interestrate {
-        pub mod marketratesheet;
+        pub mod interestratequotesheet;
     }
+    pub mod marketdataset;
 }
 
 pub mod math {
@@ -73,16 +74,22 @@ pub mod math {
 pub mod model {
     pub mod interestrate {
         pub mod interestratecurve;
+        pub mod curvegenerationerror;
         pub mod precomputeddiscountcurve;
-        pub mod deterministicinterestratecurve {
-            pub mod curvegenerationerror;
-            pub mod deterministicinterestratecurve;
-            pub mod piecewisepolyinterestratecurve;
-        }
+        pub mod piecewisepolyinterestratecurve;
+        pub mod interestratecurvecalibrator;
+        pub mod iterativebootstrapper;
+        pub mod flatforwardcurve;
+        pub mod bootstrappingtrait;
     }
 }
 
 pub mod objectwithuuid;
+
+pub mod pricer {
+    pub mod pricer;
+    pub mod simpleinstrumentpricer;
+}
 
 pub mod pricingcondition;
 

@@ -1,7 +1,7 @@
 use chrono::NaiveDate;
 
 
-pub struct DacimalRounding {
+pub struct DecimalRounding {
     deterministic_flow: bool,
     // floating rate的rounding分兩個層級：
     // estimated_index: index測量結果（rate）四捨五入，在evaluate_flow內部發生
@@ -12,11 +12,11 @@ pub struct DacimalRounding {
 }
 
 
-impl DacimalRounding {
+impl DecimalRounding {
     pub fn new(deterministic_flow: bool,
                estimated_index: bool,
-               estimated_flow: bool) -> DacimalRounding {
-        DacimalRounding {
+               estimated_flow: bool) -> DecimalRounding {
+        DecimalRounding {
             deterministic_flow,
             estimated_index,
             estimated_flow,
@@ -40,7 +40,7 @@ pub struct PricingCondition {
     horizon: NaiveDate,
     include_horizon_flow: bool,
     estimate_horizon_index: bool,
-    dacimal_rounding: DacimalRounding
+    decimal_rounding: DecimalRounding
 }
 
 
@@ -48,12 +48,12 @@ impl PricingCondition {
     pub fn new(horizon: NaiveDate,
                include_horizon_flow: bool,
                estimate_horizon_index: bool,
-               dacimal_rounding: DacimalRounding) -> PricingCondition {
+               decimal_rounding: DecimalRounding) -> PricingCondition {
         PricingCondition {
             horizon,
             include_horizon_flow,
             estimate_horizon_index,
-            dacimal_rounding,
+            decimal_rounding,
         }
     }
 
@@ -70,21 +70,21 @@ impl PricingCondition {
     }
 
     // ── rounding決策方法 ──────────────────────────────────────────────────────
-    // 呼叫端只需傳入幣別digits，不需要知道DacimalRounding的內部旗標
+    // 呼叫端只需傳入幣別digits，不需要知道DecimalRounding的內部旗標
     // 決策邏輯集中在PricingCondition，保持「知道脈絡的物件做決策」的原則
 
     /// fixed rate leg的flow金額四捨五入
     pub fn fixed_flow_rounding_digits(&self, currency_digits: u32) -> Option<u32> {
-        self.dacimal_rounding.deterministic_flow().then_some(currency_digits)
+        self.decimal_rounding.deterministic_flow().then_some(currency_digits)
     }
 
     /// floating rate leg的index rate四捨五入（在evaluate_flow內部，乘leverage前）
     pub fn floating_index_rounding_digits(&self, currency_digits: u32) -> Option<u32> {
-        self.dacimal_rounding.estimated_index().then_some(currency_digits)
+        self.decimal_rounding.estimated_index().then_some(currency_digits)
     }
 
     /// floating rate leg的flow金額四捨五入（在projected_flow最外層）
     pub fn floating_flow_rounding_digits(&self, currency_digits: u32) -> Option<u32> {
-        self.dacimal_rounding.estimated_flow().then_some(currency_digits)
+        self.decimal_rounding.estimated_flow().then_some(currency_digits)
     }
 }

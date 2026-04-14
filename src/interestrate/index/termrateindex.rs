@@ -81,9 +81,10 @@ impl InterestRateIndex for TermRateIndex {
         period: &CalculationPeriod,
         forward_curve: &Arc<dyn InterestRateCurve>,
     ) -> f64 {
+        let discount_curve = forward_curve.to_discount_curve();
         let tau = self.day_counter.year_fraction(period.start_date(), period.end_date());
-        let fv  = forward_curve.discount(period.start_date())
-                / forward_curve.discount(period.end_date());
+        let fv  = discount_curve.discount(period.start_date())
+                / discount_curve.discount(period.end_date());
         self.compounding.implied_rate(fv, tau)
     }
 

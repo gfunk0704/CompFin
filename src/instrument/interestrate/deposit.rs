@@ -83,8 +83,7 @@ impl Deposit {
 
         // curve_name_map的建構邏輯：Deposit只有一個leg，所以reference curve就是profit_and_loss_market的discount curve；如果leg有reference curve（floating leg才會有），則加入forward curve
         let mut curve_name_map: HashMap<CurveFunction, String> = HashMap::new();
-        curve_name_map.insert(CurveFunction::ReceiveDiscount, profit_and_loss_market.discount_curve_name().to_string());
-        curve_name_map.insert(CurveFunction::PayDiscount, profit_and_loss_market.discount_curve_name().to_string());
+        curve_name_map.insert(CurveFunction::ProfitAndLossDiscount, profit_and_loss_market.discount_curve_name().to_string());
 
         if leg_characters.reference_curve_name().is_some() {
             curve_name_map.insert(CurveFunction::ReceiveForward, leg_characters.reference_curve_name().unwrap().to_string());
@@ -144,7 +143,7 @@ impl Instrument for Deposit {
 
 
 impl InstrumentWithLinearFlows for Deposit {
-    fn past_receive_flows(&self, pricing_condition: PricingCondition) -> CashFlows {
+    fn past_receive_flows(&self, pricing_condition: &PricingCondition) -> CashFlows {
         let mut cash_flows: CashFlows = CashFlows::new();
         // include_horizon_flow是對projection flow，對past flow會是相反邏輯
         let include_horizon: bool = !(*pricing_condition.include_horizon_flow()); 
@@ -181,7 +180,7 @@ impl InstrumentWithLinearFlows for Deposit {
         cash_flows
     }
 
-    fn past_pay_flows(&self, pricing_condition: PricingCondition) -> CashFlows {
+    fn past_pay_flows(&self, pricing_condition: &PricingCondition) -> CashFlows {
         
         let mut cash_flows: CashFlows = CashFlows::new();
         let pay_nominal_flow = self.capitalization_flow_list().first().unwrap();
@@ -196,7 +195,7 @@ impl InstrumentWithLinearFlows for Deposit {
         cash_flows
     }
 
-    fn projected_pay_flows(&self, _forward_curve_opt: Option<Arc<dyn InterestRateCurve>>, pricing_condition: PricingCondition) -> CashFlows {
+    fn projected_pay_flows(&self, _forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>, pricing_condition: &PricingCondition) -> CashFlows {
         let mut cash_flows: CashFlows = CashFlows::new();
         // projected flows的include_horizon邏輯與past flows相反（不inverted）
         let include_horizon: bool = *pricing_condition.include_horizon_flow();
@@ -212,7 +211,7 @@ impl InstrumentWithLinearFlows for Deposit {
         cash_flows
     }
 
-    fn projected_receive_flows(&self, forward_curve_opt: Option<Arc<dyn InterestRateCurve>>, pricing_condition: PricingCondition) -> CashFlows {
+    fn projected_receive_flows(&self, forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>, pricing_condition: &PricingCondition) -> CashFlows {
         let mut cash_flows: CashFlows = CashFlows::new();
         // projected flows的include_horizon邏輯與past flows相反（不inverted）
         let include_horizon: bool = *pricing_condition.include_horizon_flow();
@@ -259,7 +258,152 @@ impl InstrumentWithLinearFlows for Deposit {
         for i in pos..self.flow_oberver_list().len() {
             cash_flows[&self.flow_oberver_list()[i].payment_date()] += self
                 .flow_oberver_list()[i]
-                .projected_flow(forward_curve_opt.as_ref(), &pricing_condition, flow_rounding_digits_opt, index_rounding_digits_opt);
+                .projected_flow(forward_curve_opt, &pricing_condition, flow_rounding_digits_opt, index_rounding_digits_opt);
+        }
+
+        cash_flows
+    }
+
+    // ── partition_point 最佳化的 cutoff 方法 ─────────────────────────────────
+    //
+    // Deposit 的 projected flows 結構：
+    //   pay:     期初本金支出（capitalization_flow_list[0]）
+    //   receive: 期末本金回收（capitalization_flow_list[1]）+ 利息（flow_observer_list）
+    //
+    // 這些 override 在 FlowObserver 層直接用 partition_point 截斷，
+    // 避免計算 cutoff 之前的 evaluate_flow（特別是 CompoundingRateIndex）。
+
+    fn projected_pay_flows_after(
+        &self,
+        cutoff: NaiveDate,
+        _forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
+    ) -> CashFlows {
+        let mut cash_flows = CashFlows::new();
+        let include_horizon = *pricing_condition.include_horizon_flow();
+        let horizon = *pricing_condition.horizon();
+        let pay_nominal_flow = self.capitalization_flow_list().first().unwrap();
+
+        // 期初本金：必須是 projected 且 payment_date > cutoff
+        let is_projected = pay_nominal_flow.payment_date() > horizon
+            || (pay_nominal_flow.payment_date() == horizon && include_horizon);
+        if is_projected && pay_nominal_flow.payment_date() > cutoff {
+            cash_flows[&pay_nominal_flow.payment_date()] -= pay_nominal_flow.amount();
+        }
+
+        cash_flows
+    }
+
+    fn projected_pay_flows_before_equal(
+        &self,
+        cutoff: NaiveDate,
+        _forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
+    ) -> CashFlows {
+        let mut cash_flows = CashFlows::new();
+        let include_horizon = *pricing_condition.include_horizon_flow();
+        let horizon = *pricing_condition.horizon();
+        let pay_nominal_flow = self.capitalization_flow_list().first().unwrap();
+
+        let is_projected = pay_nominal_flow.payment_date() > horizon
+            || (pay_nominal_flow.payment_date() == horizon && include_horizon);
+        if is_projected && pay_nominal_flow.payment_date() <= cutoff {
+            cash_flows[&pay_nominal_flow.payment_date()] -= pay_nominal_flow.amount();
+        }
+
+        cash_flows
+    }
+
+    fn projected_receive_flows_after(
+        &self,
+        cutoff: NaiveDate,
+        forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
+    ) -> CashFlows {
+        let mut cash_flows = CashFlows::new();
+        let include_horizon = *pricing_condition.include_horizon_flow();
+        let horizon = *pricing_condition.horizon();
+        let receive_nominal_flow = self.capitalization_flow_list().last().unwrap();
+
+        // 期末本金：projected 且 > cutoff
+        let is_projected = receive_nominal_flow.payment_date() > horizon
+            || (receive_nominal_flow.payment_date() == horizon && include_horizon);
+        if is_projected && receive_nominal_flow.payment_date() > cutoff {
+            cash_flows[&receive_nominal_flow.payment_date()] += receive_nominal_flow.amount();
+        }
+
+        // 利息 flows：用 partition_point 在 observer 層截斷
+        let digits = self.profit_and_loss_market.settlement_currency().digits();
+        let is_floating = forward_curve_opt.is_some();
+        let flow_rounding_digits_opt = if is_floating {
+            pricing_condition.floating_flow_rounding_digits(digits)
+        } else {
+            pricing_condition.fixed_flow_rounding_digits(digits)
+        };
+        let index_rounding_digits_opt = if is_floating {
+            pricing_condition.floating_index_rounding_digits(digits)
+        } else {
+            None
+        };
+
+        // 找到 payment_date > cutoff 的起始位置
+        let cutoff_pos = self.flow_oberver_list.partition_point(|fo| fo.payment_date() <= cutoff);
+        // 同時確保是 projected flow（payment_date > horizon）
+        let horizon_pos = self.flow_oberver_list.partition_point(|fo| {
+            if include_horizon { fo.payment_date() <= horizon } else { fo.payment_date() < horizon }
+        });
+        let start = cutoff_pos.max(horizon_pos);
+
+        for i in start..self.flow_oberver_list.len() {
+            cash_flows[&self.flow_oberver_list[i].payment_date()] += self.flow_oberver_list[i]
+                .projected_flow(forward_curve_opt, pricing_condition, flow_rounding_digits_opt, index_rounding_digits_opt);
+        }
+
+        cash_flows
+    }
+
+    fn projected_receive_flows_before_equal(
+        &self,
+        cutoff: NaiveDate,
+        forward_curve_opt: Option<&Arc<dyn InterestRateCurve>>,
+        pricing_condition: &PricingCondition,
+    ) -> CashFlows {
+        let mut cash_flows = CashFlows::new();
+        let include_horizon = *pricing_condition.include_horizon_flow();
+        let horizon = *pricing_condition.horizon();
+        let receive_nominal_flow = self.capitalization_flow_list().last().unwrap();
+
+        // 期末本金：projected 且 <= cutoff
+        let is_projected = receive_nominal_flow.payment_date() > horizon
+            || (receive_nominal_flow.payment_date() == horizon && include_horizon);
+        if is_projected && receive_nominal_flow.payment_date() <= cutoff {
+            cash_flows[&receive_nominal_flow.payment_date()] += receive_nominal_flow.amount();
+        }
+
+        // 利息 flows：projected 且 <= cutoff
+        let digits = self.profit_and_loss_market.settlement_currency().digits();
+        let is_floating = forward_curve_opt.is_some();
+        let flow_rounding_digits_opt = if is_floating {
+            pricing_condition.floating_flow_rounding_digits(digits)
+        } else {
+            pricing_condition.fixed_flow_rounding_digits(digits)
+        };
+        let index_rounding_digits_opt = if is_floating {
+            pricing_condition.floating_index_rounding_digits(digits)
+        } else {
+            None
+        };
+
+        // projected 起始位置
+        let horizon_pos = self.flow_oberver_list.partition_point(|fo| {
+            if include_horizon { fo.payment_date() <= horizon } else { fo.payment_date() < horizon }
+        });
+        // <= cutoff 的結束位置
+        let cutoff_end = self.flow_oberver_list.partition_point(|fo| fo.payment_date() <= cutoff);
+
+        for i in horizon_pos..cutoff_end {
+            cash_flows[&self.flow_oberver_list[i].payment_date()] += self.flow_oberver_list[i]
+                .projected_flow(forward_curve_opt, pricing_condition, flow_rounding_digits_opt, index_rounding_digits_opt);
         }
 
         cash_flows
