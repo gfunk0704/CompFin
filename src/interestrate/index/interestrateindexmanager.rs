@@ -7,6 +7,7 @@ use chrono::NaiveDate;
 use serde::Deserialize;
 
 use crate::interestrate::compounding::Compounding;
+use crate::interestrate::index::cachedinterestrateindex::MultiThreadedCachedIndex;
 use crate::interestrate::index::compoundingconvention::{FixingConvention, MissingFixingHandler};
 use crate::interestrate::index::compoundingrateindex::CompoundingRateIndex;
 use crate::interestrate::index::interestrateindex::{InterestRateIndex, InterestRateIndexType};
@@ -150,11 +151,12 @@ fn build_compounding_rate_index(
     let fixing_conv = parse_fixing_convention(&p.fixing_convention)?;
     let missing_fix = parse_missing_fixing_handler(&p.missing_fixing_handler)?;
 
-    Ok(Arc::new(CompoundingRateIndex::with_options(
+    let raw = Arc::new(CompoundingRateIndex::with_options(
         p.reference_curve_name, p.start_lag, p.adjuster, tenor,
         calendar, fixing_calendar, day_counter, p.daily_past_fixings, p.result_compounding,
         p.lookback_days, p.lockout_days, fixing_conv, missing_fix,
-    )))
+    ));
+    Ok(Arc::new(MultiThreadedCachedIndex::new_threadsafe(raw)))
 }
 
 fn build_index_from_json(
