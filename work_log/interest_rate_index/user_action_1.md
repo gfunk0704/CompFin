@@ -6,4 +6,4 @@
 
 - 我判斷本次修改Sonnet就足以應付，如果認為有疑慮請不要做出修改直接給出summary;
 
-- 將完成的結果摘要成claude_summary.md在本資料夾中。
+- 將完成的結果摘要成claude_summary_1.md在本資料夾中。
