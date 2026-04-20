@@ -156,7 +156,11 @@ fn build_compounding_rate_index(
         calendar, fixing_calendar, day_counter, p.daily_past_fixings, p.result_compounding,
         p.lookback_days, p.lockout_days, fixing_conv, missing_fix,
     ));
-    Ok(Arc::new(MultiThreadedCachedIndex::new_threadsafe(raw)))
+    // 若 Index 滿足 AF 條件，系統將不會對其進行快取包覆。若手動關閉 AF 模式，請注意效能損耗。
+    if !raw.arbitrage_free_applicable() {
+        return Ok(Arc::new(MultiThreadedCachedIndex::new_threadsafe(raw)));
+    }
+    Ok(raw)
 }
 
 fn build_index_from_json(
