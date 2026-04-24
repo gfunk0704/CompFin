@@ -1,4 +1,6 @@
-# COMPFIN.md
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 本文件為 **CompFin** 專案的統一開發指引，供 Claude Code 與 Gemini CLI 共同參照。
 
@@ -36,6 +38,8 @@ cargo fmt                # 格式化
 cargo doc --open         # 生成並開啟文件
 ```
 
+> **注意：** 目前專案尚無測試（無 `#[cfg(test)]` 區塊，亦無 `tests/` 目錄）。`cargo test` 會執行成功但無測試項目。
+
 ---
 
 ## 核心架構
@@ -66,7 +70,7 @@ cargo doc --open         # 生成並開啟文件
 
 ### 關鍵 Trait
 
-- **`Instrument` / `InstrumentWithLinearFlows`** — 現金流行為
+- **`Instrument` / `InstrumentWithLinearFlows`** — 現金流行為；`projected_pay/receive_flows_after/before_equal()` 的預設實作為 retain filter，`Deposit`/`InterestRateSwap` 覆寫以利用 `partition_point` 避免計算 cutoff 前的昂貴流量
 - **`InterestRateIndex`** — 利率查詢與投影
 - **`InterestRateCurve`** — 折現因子、零利率、遠期利率；子 trait: `DiscountCurve`、`ZeroRateCurve`、`InstForwardCurve`
 - **`LegCharacters`** — 固定/浮動 leg 參數（使用 `RwLock` 實現執行期可調整）
@@ -76,23 +80,39 @@ cargo doc --open         # 生成並開啟文件
 
 ### 曲線建構與校準
 
-- `IterativeBootstrapper`：逐 pillar 根求解，搭配分段凍結加速策略（已解 pillar 凍結後再校準下一段）
-- `FlatForwardCurve`：單 pillar 場景
-- `BootstrappingTrait`：跨內插目標（`LogDiscount`、`ZeroRate`、`InstForward`）提供初始值/區間
-- `FreezableInstrument`：凍結已解前綴的 NPV，僅計算尾部流量（對 `CompoundingRateIndex` 高每流成本場景有顯著效益）
+- `IterativeBootstrapper`：逐 pillar 根求解，第一個 pillar 使用 `FlatForwardCurve`，後續使用 `PiecewisePolyInterestRateCurveGenerator`。`apply_partial_freeze_cash_flows = true` 時啟用 `solve_subsequent_pillar_with_freeze()`：凍結已解 pillar 的前綴 NPV，每次迭代只重算 cutoff 後的尾部流量，對長天期 IRS 效益顯著
+- `FlatForwardCurve`：單 pillar 場景，解出常數 zero rate
+- `BootstrappingTrait`：跨三種 `InterpolationTarget`（`LogDiscount`、`ZeroRate`、`InstantaneousForwardRate`）提供初始值與 bracket；並負責將 `FlatForwardCurve` 解出的 zero rate 轉換為目標 interpolation space 的值
+- `PiecewiseCurveInner`：`deriv_curve` 與 `integral_curve` 使用 `OnceLock` 按需建立（只有特定 `InterpolationTarget` 才需要），避免不必要的計算
 - `PrecomputedDiscountCurve`：校準期間快取折現因子查詢
 - `LeastSquareCurveCalibration`（規劃中）：trust-region 方法，對應 QuantLib GlobalBootstrapper
 
+### 報價到 Bootstrapping 的完整路徑
+
+```
+InterestRateQuoteSheet::generate_calibration_helper()
+  → 取得 quote，呼叫 generator setter，呼叫 generator.market_rate(quote)
+  → 回傳 InterestRateCurveCalibrationHelper { instrument, market_rate }
+
+InterestRateCurveCalibrator::generate_calibration_set()
+  → 透過 MaturityKey（Tenor / Date / NthQuote）查 QuoteBook
+  → 收集所有 helper
+
+IterativeBootstrapper::calibrate()
+  → 按 max_date 排序 helpers
+  → 逐 pillar 求解（FlatForward 第一個，PiecewisePoly 後續）
+```
+
 ### JSON 設定載入順序
 
-依相依性順序載入：
+依相依性順序載入（`configuration.rs` 中固定）：
 
 1. `holiday_calendar[]` — 假日規則（FixedDate、NthWeekday、LastWeekday、Easter 變體）
-2. `day_count[]` — 天數計算慣例
-3. `schedule[]` — 期間生成器與 stub 規則
-4. `market[]` — 幣別、折現曲線、結算條件
-5. `interest_rate_index[]` — 利率指標與複利慣例
-6. `deposit_generator[]` / `swap_generator[]` — 商品範本
+2. `schedule[]` — 期間生成器與 stub 規則
+3. `day_count[]` — 天數計算慣例
+4. `market[]` — 幣別、折現曲線、結算條件（依賴 calendar）
+5. `interest_rate_index[]` — 利率指標與複利慣例（依賴 calendar、day_count）
+6. `deposit_generator[]` / `swap_generator[]` — 商品範本（依賴全部上層）
 
 ---
 
@@ -115,6 +135,7 @@ cargo doc --open         # 生成並開啟文件
 - 共享狀態透過 `Arc` 傳遞
 - 內部可變性使用 `RwLock`（非 `RefCell`），因所有型別必須 `Send + Sync`
 - `Arc::clone` 成本極低（~3–5 ns），不值得為避免它而引入生命週期參數複雜度
+- 按需初始化的昂貴欄位使用 `OnceLock`（參見 `PiecewiseCurveInner` 的 `deriv_curve` / `integral_curve`）
 
 ### 慣用風格
 
@@ -180,6 +201,8 @@ cargo doc --open         # 生成並開啟文件
 9. 回到步驟 1
 ```
 
+設計討論記錄存於 `work_log/<topic>/`，格式為 `user_question_N.md`、`claude_answer_N.md`、`gemini_answer_N.md`、`user_action_N.md`。
+
 ### 協作注意事項
 
 - Claude 的分析在過往討論中多次發現 Gemini 提案的錯誤（double-discounting 誤診、TypeId-based PricerMap 不可行、supertrait 向上轉型限制），但最終判斷權在 Ray
@@ -190,16 +213,16 @@ cargo doc --open         # 生成並開啟文件
 
 ## 當前開發狀態
 
-### 進行中
+### 已完成
 
-- `IterativeBootstrapper` 已實作（pillar-by-pillar 根求解 + `FlatForwardCurve` + `BootstrappingTrait`）
-- `FreezableInstrument` 部分實作（凍結前綴 NPV 核心設計完成，`iterativebootstrapper.rs` 實作中斷）
-- `InterestRateCurveCalibrationHelper` 的 `market_rate` 尚未接線（目前使用硬編碼佔位值）；`into_instrument()` 待新增
+- `IterativeBootstrapper` 完整實作（pillar-by-pillar 根求解 + `FlatForwardCurve` + `BootstrappingTrait`）
+- Partial freeze 優化完整實作：`apply_partial_freeze_cash_flows` 旗標 + `solve_subsequent_pillar_with_freeze()`（無獨立 `FreezableInstrument` 型別，邏輯直接內嵌於 bootstrapper）
+- `market_rate` 完整接線：`InterestRateQuoteSheet::generate_calibration_helper()` → `InterestRateCurveCalibrationHelper { instrument, market_rate }` → `IterativeBootstrapper::calibrate()`
 - Hull-White 條件折現曲線框架已在 Python 實作；數個 bug 已協作修正
 
 ### 待辦
 
-- 完成 `FreezableInstrument` 與凍結感知的 bootstrapping（`solve_subsequent_pillar_with_freeze`）
-- 將 `market_rate` 從 `InterestRateQuoteSheet` 經 `InterestRateCurveCalibrationHelper` 接入 `IterativeBootstrapper`
 - `LeastSquareCurveCalibration`（trust-region，QuantLib GlobalBootstrapper 對應物）
+- `PrecomputedDiscountCurve` 與 `CachedInterestRateIndex` 啟用（待 iterative bootstrapping 通過 Python 對齊驗證後）
 - Hull-White 結構型商品定價（Bermudan callables for CMS Steepener、Inverse Floater、Range Accrual、TARN）
+- 測試基礎設施（目前零測試覆蓋）
